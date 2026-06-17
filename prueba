@@ -1,2 +1,124 @@
 djdjfksdjflsdf
 #El codigo de programacion
+import pygame
+import sys
+
+# ================= CONFIGURACIÓN DEL USUARIO =================
+SONG_TITLE = "Heaven"
+ARTIST = "Shihoko Hirata (Persona 4)"
+IMAGE_PATH = "p4.jpg"  # Cambia esto por la imagen que desees usar de fondo
+AUDIO_PATH = "Heaven.mp3" # Usa un archivo de audio extraído (.mp3 o .wav)
+
+# Tiempos sincronizados para "Heaven"
+lyrics_data = [
+    {"start": 13.0, "end": 19.5, "text": "Can't get my mind out of those memories"},
+    {"start": 20.0, "end": 26.5, "text": "Now time to tell them don't take my dream"},
+    {"start": 28.0, "end": 34.5, "text": "Still music keeps on tuning me from the words that hurt my soul"},
+    {"start": 35.0, "end": 41.5, "text": "Removing doubts from my mind"},
+    {"start": 42.0, "end": 45.5, "text": "Those long days passing by from that door"},
+    {"start": 46.0, "end": 49.5, "text": "Like late summer they slowly fade away"},
+    {"start": 50.0, "end": 53.5, "text": "Finding ways through the favorite tune"},
+    {"start": 54.0, "end": 58.5, "text": "Playing all day with my eyes closed"},
+    {"start": 60.0, "end": 63.5, "text": "Those long days passing by from that door"},
+    {"start": 64.0, "end": 67.5, "text": "Like late summer they slowly fade away"},
+    {"start": 68.0, "end": 71.5, "text": "Finding ways through the favorite tune"},
+    {"start": 72.0, "end": 76.5, "text": "Filling me with those sounds"}
+]
+# =============================================================
+
+def main():
+    pygame.init()
+    
+    # Configuración de pantalla
+    WIDTH, HEIGHT = 1100, 600
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("Karaoke Python - Persona 4")
+
+    # Colores
+    WHITE = (255, 255, 255)
+    YELLOW = (255, 255, 0)
+    BLACK = (0, 0, 0)
+
+    # Fuentes (Se ajusta un poco el tamaño para que quepan las frases largas)
+    font_title = pygame.font.SysFont("arial", 40, bold=True)
+    font_lyrics = pygame.font.SysFont("arial", 38, bold=True)
+
+    # Cargar Imagen de Fondo
+    try:
+        background_image = pygame.image.load(IMAGE_PATH)
+        background_image = pygame.transform.scale(background_image, (WIDTH, HEIGHT))
+    except Exception as e:
+        print(f"No se pudo cargar la imagen: {e}. Usando fondo oscuro.")
+        background_image = pygame.Surface((WIDTH, HEIGHT))
+        background_image.fill((30, 30, 40)) # Un tono azul oscuro acorde a P4
+
+    # Cargar Audio
+    try:
+        pygame.mixer.music.load(AUDIO_PATH)
+        pygame.mixer.music.play()
+    except Exception as e:
+        print(f"Error al cargar el audio: {e}. Asegúrate de que el archivo {AUDIO_PATH} exista.")
+        pygame.quit()
+        sys.exit()
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+        # Obtener el tiempo actual de la canción en segundos
+        current_time = pygame.mixer.music.get_pos() / 1000.0
+
+        # 1. Dibujar el fondo
+        screen.blit(background_image, (0, 0))
+
+        # 2. Dibujar el Título y Artista
+        title_text = f"{SONG_TITLE} - {ARTIST}"
+        title_surf = font_title.render(title_text, True, WHITE)
+        title_rect = title_surf.get_rect(center=(WIDTH // 2, 50))
+        
+        # Sombra negra para el título
+        shadow_surf = font_title.render(title_text, True, BLACK)
+        screen.blit(shadow_surf, (title_rect.x + 3, title_rect.y + 3))
+        screen.blit(title_surf, title_rect)
+
+        # 3. Buscar la letra correspondiente al tiempo actual
+        current_lyric = None
+        for line in lyrics_data:
+            if line["start"] <= current_time <= line["end"]:
+                current_lyric = line
+                break
+
+        # 4. Dibujar la letra y el efecto de llenado
+        if current_lyric:
+            base_text = font_lyrics.render(current_lyric["text"], True, WHITE)
+            text_rect = base_text.get_rect(center=(WIDTH // 2, HEIGHT - 100))
+            
+            # Sombra de la letra
+            shadow_text = font_lyrics.render(current_lyric["text"], True, BLACK)
+            screen.blit(shadow_text, (text_rect.x + 3, text_rect.y + 3))
+            screen.blit(base_text, text_rect)
+
+            # Porcentaje de llenado
+            duration = current_lyric["end"] - current_lyric["start"]
+            elapsed = current_time - current_lyric["start"]
+            progress = max(0.0, min(1.0, elapsed / duration))
+
+            highlight_text = font_lyrics.render(current_lyric["text"], True, YELLOW)
+            
+            clip_width = int(text_rect.width * progress)
+            clip_rect = pygame.Rect(0, 0, clip_width, text_rect.height)
+            
+            screen.blit(highlight_text, text_rect, clip_rect)
+
+        pygame.display.flip()
+        clock.tick(60)
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
