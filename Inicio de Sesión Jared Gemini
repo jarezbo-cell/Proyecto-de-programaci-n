@@ -1,0 +1,107 @@
+import customtkinter as ctk
+
+# Inicializar la aplicación
+app = ctk.CTk()
+app.title("Sistema Integral Jurídico - Inicio de Sesión")
+app.geometry("500x650")
+
+# Forzar modo claro para que coincida exactamente con tu imagen
+# (Puedes cambiarlo a "system" o "dark" si deseas ver la adaptación)
+ctk.set_appearance_mode("light") 
+
+# 1. Fondo general de la ventana
+app.configure(fg_color="#EFE7DC")
+
+# 2. Tarjeta contenedora blanca/crema del centro
+ventana = ctk.CTkFrame(
+    master=app,
+    fg_color="#F9F8F6",
+    border_color="#C2BCB4",
+    border_width=1,
+    corner_radius=10
+)
+ventana.pack(pady=50, padx=40, fill="both", expand=True)
+
+# Logotipo (Simulado con un emoji de balanza ⚖️ o texto grande)
+lbl_logo = ctk.CTkLabel(
+    master=ventana, 
+    text="⚖️", 
+    font=("Arial", 50),
+    text_color="#4A311E"
+)
+lbl_logo.pack(pady=(30, 5))
+
+# Título Principal
+lbl_titulo = ctk.CTkLabel(
+    master=ventana,
+    text="SISTEMA INTEGRAL JURÍDICO",
+    font=("Times New Roman", 20, "bold"),
+    text_color="#1F1711"
+)
+lbl_titulo.pack(pady=5)
+
+# Subtítulo
+lbl_subtitulo = ctk.CTkLabel(
+    master=ventana,
+    text="Inicio de sesión unificado para personal autorizado",
+    font=("Arial", 11),
+    text_color="#7D5D42"
+)
+lbl_subtitulo.pack(pady=(0, 25))
+
+# --- CAMPOS DE ENTRADA ---
+
+# Usuario / Correo
+lbl_usuario = ctk.CTkLabel(master=ventana, text="Correo Electrónico / ID de Empleado", font=("Arial", 12), text_color="#1F1711")
+lbl_usuario.pack(anchor="w", padx=40, pady=(10, 2))
+
+txt_usuario = ctk.CTkEntry(
+    master=ventana,
+    fg_color="#FFFFFF",
+    text_color="#1F1711",
+    border_color="#C2BCB4",
+    border_width=1,
+    height=35,
+    corner_radius=6
+)
+txt_usuario.pack(fill="x", padx=40, pady=(0, 15))
+
+# Contraseña
+lbl_password = ctk.CTkLabel(master=ventana, text="Contraseña", font=("Arial", 12), text_color="#1F1711")
+lbl_password.pack(anchor="w", padx=40, pady=(10, 2))
+
+txt_password = ctk.CTkEntry(
+    master=ventana,
+    show="*",
+    fg_color="#FFFFFF",
+    text_color="#1F1711",
+    border_color="#C2BCB4",
+    border_width=1,
+    height=35,
+    corner_radius=6
+)
+txt_password.pack(fill="x", padx=40, pady=(0, 30))
+
+# --- BOTÓN PRINCIPAL ---
+btn_login = ctk.CTkButton(
+    master=ventana,
+    text="INICIAR SESIÓN",
+    font=("Arial", 13, "bold"),
+    fg_color="#4A311E",          # Color normal
+    hover_color="#362315",       # Un tono más oscuro para el efecto hover
+    text_color="#FFFFFF",
+    height=40,
+    corner_radius=6
+)
+btn_login.pack(fill="x", padx=40, pady=(0, 40))
+
+# --- COPYRIGHT / PIE DE PÁGINA ---
+lbl_copyright = ctk.CTkLabel(
+    master=ventana,
+    text="Bufete Jurídico & Asociados - Todos los derechos reservados.",
+    font=("Arial", 10),
+    text_color="#1F1711"
+)
+lbl_copyright.pack(side="bottom", pady=20)
+
+app.mainloop()
