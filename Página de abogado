@@ -1,0 +1,158 @@
+import customtkinter as ctk
+
+app = ctk.CTk()
+# Nota: En customtkinter se usa app.title("...") como función, no con el signo de "="
+app.title("Sistema Integral Jurídico - Abogado")
+app.geometry("1100x650") # Ajusté un poco el tamaño para que se parezca más a la proporción de la foto
+
+ctk.set_appearance_mode("light")
+app.configure(fg_color="#EFE7DC") # Fondo beige exterior
+
+# Contenedor principal (El recuadro que engloba todo con bordes redondeados)
+abogadoventana = ctk.CTkFrame(
+    master=app,
+    fg_color="#3E2723", # Marrón oscuro de fondo para la barra lateral de la imagen
+    border_color="#C2BCB4",
+    border_width=1,
+    corner_radius=15
+)
+abogadoventana.pack(pady=40, padx=40, fill="both", expand=True)
+
+# Configuramos la cuadrícula (Grid) del contenedor principal para dividirlo en 2 columnas
+# Columna 0 (Izquierda - Menú): No se estira de más
+# Columna 1 (Derecha - Panel blanco): Se expande para ocupar el resto del espacio
+abogadoventana.grid_columnconfigure(0, weight=0)
+abogadoventana.grid_columnconfigure(1, weight=1)
+abogadoventana.grid_rowconfigure(0, weight=1)
+
+# ==========================================
+# 1. BARRA LATERAL IZQUERDA (Menú y Perfil)
+# ==========================================
+frame_lateral = ctk.CTkFrame(master=abogadoventana, fg_color="#3E2723", corner_radius=0)
+frame_lateral.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+
+# Logotipo (Emoji de balanza)
+lbl_logo = ctk.CTkLabel(
+    master=frame_lateral, 
+    text="⚖️", 
+    font=("Arial", 28), # Más grande para que luzca como logo
+    text_color="#EFE7DC"
+)
+lbl_logo.pack(pady=(10, 2))
+
+# Subtítulo del Bufete en la barra lateral
+lbl_subtitulo = ctk.CTkLabel(
+    master=frame_lateral,
+    text="BUFETE JURÍDICO & ASOCIADOS",
+    font=("Arial", 11, "bold"),
+    text_color="#C2BCB4"
+)
+lbl_subtitulo.pack(pady=(0, 20))
+
+# --- Recuadro de Información del Abogado ---
+frame_info_abogado = ctk.CTkFrame(master=frame_lateral, fg_color="#5D4037", corner_radius=10)
+frame_info_abogado.pack(fill="x", padx=10, pady=(0, 20))
+
+lbl_info_titulo = ctk.CTkLabel(
+    master=frame_info_abogado, text="INFORMACIÓN DEL ABOGADO",
+    font=("Arial", 10, "bold"), text_color="#EFE7DC"
+)
+lbl_info_titulo.pack(pady=(10, 5))
+
+# Mini avatar simulado
+frame_avatar = ctk.CTkFrame(master=frame_info_abogado, width=45, height=45, fg_color="#EFE7DC", corner_radius=25)
+frame_avatar.pack(pady=5)
+frame_avatar.pack_propagate(False) # Evita que el frame se encoja
+lbl_avatar_emji = ctk.CTkLabel(master=frame_avatar, text="👤", font=("Arial", 20)).pack(expand=True)
+
+# Textos del Abogado
+lbl_nombre = ctk.CTkLabel(master=frame_info_abogado, text="Nombre: ______", font=("Arial", 11), text_color="#FFF", anchor="w")
+lbl_nombre.pack(fill="x", padx=15, pady=2)
+
+lbl_id = ctk.CTkLabel(master=frame_info_abogado, text="ID Empleado: ______", font=("Arial", 11), text_color="#FFF", anchor="w")
+lbl_id.pack(fill="x", padx=15, pady=2)
+
+lbl_correo = ctk.CTkLabel(master=frame_info_abogado, text="Correo: ______", font=("Arial", 11), text_color="#FFF", anchor="w")
+lbl_correo.pack(fill="x", padx=15, pady=(2, 10))
+
+# --- BOTONES DEL MENÚ LATERAL ---
+# Función auxiliar para crear botones idénticos a los de la imagen
+def crear_boton_menu(texto, icono):
+    return ctk.CTkButton(
+        master=frame_lateral,
+        text=f"{icono}  {texto}",
+        anchor="w", # Alinea el texto a la izquierda
+        fg_color="#4E342E",
+        hover_color="#5D4037",
+        border_color="#6D4C41",
+        border_width=1,
+        height=42,
+        corner_radius=8,
+        font=("Arial", 12, "bold"),
+        text_color="#EFE7DC"
+    )
+
+btn_expediente = crear_boton_menu("VER EXPEDIENTE", "📁")
+btn_expediente.pack(fill="x", padx=10, pady=5)
+
+btn_recado = crear_boton_menu("VER RECADO", "✉️")
+btn_recado.pack(fill="x", padx=10, pady=5)
+
+btn_asesoria = crear_boton_menu("REGISTRAR ASESORÍA", "📝")
+btn_asesoria.pack(fill="x", padx=10, pady=5)
+
+btn_audiencia = crear_boton_menu("AGENDAR AUDIENCIA", "📅")
+btn_audiencia.pack(fill="x", padx=10, pady=5)
+
+
+# ==========================================
+# 2. PANEL PRINCIPAL DERECHO (Blanco/Crema claro)
+# ==========================================
+# Este es el contenedor que se ve de fondo blanco en tu imagen original
+panel_derecho = ctk.CTkFrame(master=abogadoventana, fg_color="#F9F8F6", corner_radius=12)
+panel_derecho.grid(row=0, column=1, padx=(0, 20), pady=20, sticky="nsew")
+
+# Título Principal (Movido aquí adentro para que se vea en la parte blanca)
+lbl_titulo = ctk.CTkLabel(
+    master=panel_derecho,
+    text="PANEL PRINCIPAL - ABOGADO",
+    font=("Times New Roman", 22, "bold"),
+    text_color="#1F1711"
+)
+lbl_titulo.pack(anchor="w", padx=40, pady=(40, 10))
+
+# --- AQUÍ EMPIEZAN TUS CAMPOS DE ENTRADA (Dentro del panel blanco) ---
+
+lbl_usuario = ctk.CTkLabel(master=panel_derecho, text="Buscar o Ver Expediente:", font=("Arial", 12, "bold"), text_color="#1F1711")
+lbl_usuario.pack(anchor="w", padx=40, pady=(20, 2))
+
+txt_usuario = ctk.CTkEntry(
+    master=panel_derecho,
+    fg_color="#FFFFFF",
+    text_color="#1F1711",
+    border_color="#C2BCB4",
+    border_width=1,
+    height=35,
+    corner_radius=6,
+    placeholder_text="Ingrese el número de expediente..."
+)
+txt_usuario.pack(fill="x", padx=40, pady=(0, 10))
+
+
+# --- BOTÓN CERRAR SESIÓN ---
+# Ubicado abajo a la derecha utilizando un frame contenedor o empaquetado inteligente
+btn_cerrar_sesion = ctk.CTkButton(
+    master=panel_derecho,
+    text="🛑 CERRAR SESIÓN",
+    fg_color="#B71C1C",
+    hover_color="#9A1B1B",
+    text_color="#FFFFFF",
+    font=("Arial", 12, "bold"),
+    height=35,
+    corner_radius=8
+)
+# fill=None y anchor="se" (South-East / Sureste) lo tiran hacia la esquina inferior derecha
+btn_cerrar_sesion.pack(side="bottom", anchor="se", padx=40, pady=40)
+
+app.mainloop()
+app.mainloop()
