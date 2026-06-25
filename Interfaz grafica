@@ -1,0 +1,149 @@
+import customtkinter as ctk
+from tkinter import messagebox
+
+# ==========================================
+# 1. FUNCIÓN MAESTRA: CREA LOS TABLEROS DE ROL
+# ==========================================
+def abrir_tablero(rol, titulo_tarjeta, botones_lista, mostrar_pestanas=False):
+    # Crear la ventana del tablero
+    ventana_tablero = ctk.CTk()
+    ventana_tablero.title(f"Sistema Integral Jurídico - {rol}")
+    ventana_tablero.geometry("1100x650")
+    ctk.set_appearance_mode("light")
+    ventana_tablero.configure(fg_color="#EFE7DC")
+
+    # Contenedor Base
+    ventana_base = ctk.CTkFrame(master=ventana_tablero, fg_color="#3E2723", corner_radius=15)
+    ventana_base.pack(pady=40, padx=40, fill="both", expand=True)
+
+    # --- BARRA LATERAL IZQUIERDA ---
+    menu_lateral = ctk.CTkFrame(master=ventana_base, fg_color="#3E2723", width=280)
+    menu_lateral.pack(side="left", fill="y", padx=20, pady=20)
+    menu_lateral.pack_propagate(False)
+
+    # Identidad del Bufete
+    ctk.CTkLabel(master=menu_lateral, text="⚖️", font=("Arial", 32), text_color="#EFE7DC").pack(pady=(10, 2))
+    ctk.CTkLabel(master=menu_lateral, text="BUFETE JURÍDICO & ASOCIADOS", font=("Arial", 10, "bold"), text_color="#C2BCB4").pack(pady=(0, 15))
+
+    # Tarjeta de Información del Usuario
+    tarjeta_info = ctk.CTkFrame(master=menu_lateral, fg_color="#5D4037", corner_radius=10)
+    tarjeta_info.pack(fill="x", padx=10, pady=(0, 20))
+    
+    ctk.CTkLabel(master=tarjeta_info, text=titulo_tarjeta, font=("Arial", 9, "bold"), text_color="#EFE7DC").pack(pady=(10, 8))
+    ctk.CTkLabel(master=tarjeta_info, text="👤", font=("Arial", 24), fg_color="#EFE7DC", text_color="#3E2723", width=40, height=40, corner_radius=20).pack(pady=(0, 10))
+
+    # Datos simulados (Aquí conectarás las variables de tu Base de Datos más adelante)
+    for dato in ["Nombre:  _______", "ID Empleado:  _______", "Correo:  _______"]:
+        ctk.CTkLabel(master=tarjeta_info, text=dato, font=("Arial", 11), text_color="#FFF", anchor="w").pack(fill="x", padx=20, pady=2)
+    ctk.CTkLabel(master=tarjeta_info, text="").pack(pady=2)
+
+    # Botones dinámicos de la barra lateral según el rol
+    for texto, icono in botones_lista:
+        ctk.CTkButton(
+            master=menu_lateral, text=f"{icono}   {texto}", anchor="w",
+            fg_color="#4E342E", hover_color="#5D4037", border_color="#6D4C41",
+            border_width=1, height=40, corner_radius=8, font=("Arial", 11, "bold"), text_color="#EFE7DC"
+        ).pack(fill="x", padx=10, pady=5)
+
+    # --- PANEL PRINCIPAL DERECHO (Área Blanca) ---
+    panel_derecho = ctk.CTkFrame(master=ventana_base, fg_color="#F9F8F6", corner_radius=12)
+    panel_derecho.pack(side="right", fill="both", expand=True, padx=(0, 20), pady=20)
+
+    # Título del panel
+    ctk.CTkLabel(master=panel_derecho, text=f"PANEL PRINCIPAL - {rol}", font=("Times New Roman", 24, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(40, 15))
+
+    # Pestañas horizontales (Exclusivo para el Jefe)
+    if mostrar_pestanas:
+        fila_botones = ctk.CTkFrame(master=panel_derecho, fg_color="transparent")
+        fila_botones.pack(anchor="w", padx=40, pady=(0, 20))
+        for pestana in ["OVERVIEW", "FINANZAS", "USUARIOS", "CASOS"]:
+            ctk.CTkButton(
+                master=fila_botones, text=pestana, fg_color="#4E342E", hover_color="#5D4037",
+                text_color="#EFE7DC", font=("Arial", 11, "bold"), height=35, width=100, corner_radius=8
+            ).pack(side="left", padx=(0, 10))
+
+    # Entrada de búsqueda común
+    txt_buscar = ctk.CTkEntry(master=panel_derecho, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=38, corner_radius=6, placeholder_text="Buscar...")
+    txt_buscar.pack(fill="x", padx=40, pady=10)
+
+    # Función interna para regresar al login al cerrar sesión
+    def cerrar_sesion():
+        ventana_tablero.destroy()
+        crear_login()
+
+    # Botón Cerrar Sesión común
+    btn_cerrar_sesion = ctk.CTkButton(master=panel_derecho, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", text_color="#FFFFFF", font=("Arial", 12, "bold"), height=38, corner_radius=8, command=cerrar_sesion)
+    btn_cerrar_sesion.pack(side="bottom", anchor="se", padx=40, pady=40)
+
+    ventana_tablero.mainloop()
+
+
+# ==========================================
+# 2. PROCESO DE LOGUEO / VALIDACIÓN
+# ==========================================
+def validar_login(ventana_login, usuario):
+    u = usuario.lower().strip()
+    
+    # Datos únicos de botones según roles
+    botones_jefe = [("DAR DE ALTA O BAJA USUARIOS", "👥"), ("ASIGNAR CASO", "⚖️"), ("PAGO DE NOMINA DE EMPLEADOS", "🪙")]
+    botones_pasante = [("REVISAR CASO", "🔍"), ("SUBIR CASO", "🔼"), ("REDACTAR RECADO", "✍️")]
+    botones_abogado = [("VER EXPEDIENTE", "📁"), ("VER RECADO", "✉️"), ("REGISTRAR ASESORÍA", "📝"), ("AGENDAR AUDIENCIA", "📅")]
+
+    if u == "jefe":
+        ventana_login.destroy()
+        abrir_tablero("JEFE", "INFORMACIÓN DEL JEFE", botones_jefe, mostrar_pestanas=True)
+    elif u == "pasante":
+        ventana_login.destroy()
+        abrir_tablero("PASANTE", "INFORMACIÓN DEL PASANTE", botones_pasante, mostrar_pestanas=False)
+    elif u == "abogado":
+        ventana_login.destroy()
+        abrir_tablero("ABOGADO", "INFORMACIÓN DEL ABOGADO", botones_abogado, mostrar_pestanas=False)
+    else:
+        messagebox.showerror("Error", "Usuario no reconocido.\nUsa: 'jefe', 'abogado' o 'pasante' para la prueba.")
+
+
+# ==========================================
+# 3. INTERFAZ DEL LOGIN (PANTALLA DE INICIO)
+# ==========================================
+def crear_login():
+    app_login = ctk.CTk()
+    app_login.title("Sistema Integral Jurídico - Inicio de Sesión")
+    app_login.geometry("500x650")
+    ctk.set_appearance_mode("light") 
+    app_login.configure(fg_color="#EFE7DC")
+
+    # Tarjeta blanca central
+    ventana = ctk.CTkFrame(master=app_login, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, corner_radius=10)
+    ventana.pack(pady=50, padx=40, fill="both", expand=True)
+
+    # Encabezados y Logos
+    ctk.CTkLabel(master=ventana, text="⚖️", font=("Arial", 50), text_color="#4A311E").pack(pady=(30, 5))
+    ctk.CTkLabel(master=ventana, text="SISTEMA INTEGRAL JURÍDICO", font=("Times New Roman", 20, "bold"), text_color="#1F1711").pack(pady=5)
+    ctk.CTkLabel(master=ventana, text="Inicio de sesión unificado para personal autorizado", font=("Arial", 11), text_color="#7D5D42").pack(pady=(0, 25))
+
+    # Entradas de Texto
+    ctk.CTkLabel(master=ventana, text="Correo Electrónico / ID de Empleado", font=("Arial", 12), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
+    txt_usuario = ctk.CTkEntry(master=ventana, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=35, corner_radius=6)
+    txt_usuario.pack(fill="x", padx=40, pady=(0, 15))
+
+    ctk.CTkLabel(master=ventana, text="Contraseña", font=("Arial", 12), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
+    txt_password = ctk.CTkEntry(master=ventana, show="*", fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=35, corner_radius=6)
+    txt_password.pack(fill="x", padx=40, pady=(0, 30))
+
+    # Botón de Ingreso
+    btn_login = ctk.CTkButton(
+        master=ventana, text="INICIAR SESIÓN", font=("Arial", 13, "bold"), fg_color="#4A311E", hover_color="#362315", text_color="#FFFFFF", height=40, corner_radius=6,
+        command=lambda: validar_login(app_login, txt_usuario.get())
+    )
+    btn_login.pack(fill="x", padx=40, pady=(0, 40))
+
+    # Copyright fijo abajo
+    ctk.CTkLabel(master=ventana, text="Bufete Jurídico & Asociados - Todos los derechos reservados.", font=("Arial", 10), text_color="#1F1711").pack(side="bottom", pady=20)
+
+    app_login.mainloop()
+
+# ==========================================
+# ARRANCAR EL PROGRAMA DESDE EL LOGIN
+# ==========================================
+if __name__ == "__main__":
+    crear_login()
