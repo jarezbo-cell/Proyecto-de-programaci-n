@@ -123,8 +123,8 @@ def validar_login(ventana_login, usuario, password):
             ventana_login.destroy()
             
             # Distribución de pantallas según el rol de la BD
-            if "JEFE" in rol_bd:
-                abrir_tablero("JEFE", "INFORMACIÓN DEL JEFE", botones_jefe, datos_usuario, mostrar_pestanas=True)
+            if "JEFE" or "SuperUsuario" in rol_bd:
+                abrir_tablero(f'{rol_bd}', "INFORMACIÓN DEL JEFE", botones_jefe, datos_usuario, mostrar_pestanas=True)
             elif "PASANTE" in rol_bd:
                 abrir_tablero("PASANTE", "INFORMACIÓN DEL PASANTE", botones_pasante, datos_usuario, mostrar_pestanas=False)
             elif "ABOGADO" in rol_bd:
@@ -181,3 +181,4 @@ def crear_login():
 
 if __name__ == "__main__":
     crear_login()
+
