@@ -12,7 +12,7 @@ RUTA_BD = "C:\\Users\\drago\\OneDrive\\Escritorio\\BD despacho.db"
 # Listas de tuplas que definen el (Texto, Icono) de los botones laterales según cada rol
 BOTONES_JEFE = [("DAR DE ALTA O BAJA USUARIOS", "👥"), ("ASIGNAR CASO", "⚖️"), ("PAGO DE NOMINA DE EMPLEADOS", "🪙")]
 BOTONES_PASANTE = [("REVISAR CASO", "🔍"), ("SUBIR CASO", "🔼"), ("REDACTAR RECADO", "✍️")]
-BOTONES_ABOGADO = [("VER EXPEDIENTE", "📁"), ("VER RECADO", "✉️"), ("REGISTRAR ASESORÍA", "📝"), ("AGENDAR AUDIENCIA", "📅")]
+BOTONES_ABOGADO = [("VER ASESORÍA", "📁"), ("VER RECADO", "✉️"), ("REGISTRAR ASESORÍA", "📝"), ("AGENDAR AUDIENCIA", "📅")]
 
 
 # ==========================================================
@@ -348,76 +348,79 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         panel_derecho.grid_columnconfigure(0, weight=1)
 
         # Creación de los 4 contenedores invisibles (Frames) correspondientes a cada menú
-        vista_expedientes = ctk.CTkFrame(master=panel_derecho, fg_color="#F9F8F6", corner_radius=12)
+        vista_ver_asesoria = ctk.CTkFrame(master=panel_derecho, fg_color="#F9F8F6", corner_radius=12)
         vista_recados = ctk.CTkFrame(master=panel_derecho, fg_color="#F9F8F6", corner_radius=12)
         vista_asesoria = ctk.CTkFrame(master=panel_derecho, fg_color="#F9F8F6", corner_radius=12)
         vista_audiencia = ctk.CTkFrame(master=panel_derecho, fg_color="#F9F8F6", corner_radius=12)
 
         # Ubica los 4 contenedores exactamente en la misma posición (uno sobre otro) usando grid
-        for v in (vista_expedientes, vista_recados, vista_asesoria, vista_audiencia):
+        for v in (vista_ver_asesoria, vista_recados, vista_asesoria, vista_audiencia):
             v.grid(row=0, column=0, sticky="nsew")
 
         # Poblamos el diccionario para luego conectarlo en el ciclo de botones del menú
         vistas_abogado = {
-            "VER EXPEDIENTE": vista_expedientes,
+            "VER ASESORÍA": vista_ver_asesoria,
             "VER RECADO": vista_recados,
             "REGISTRAR ASESORÍA": vista_asesoria,
             "AGENDAR AUDIENCIA": vista_audiencia
         }
 
         # --- FUNCIONES DE BASE DE DATOS (ABOGADO) ---
-        def db_buscar_expediente():
-            """Recupera la descripción de un caso usando el ID ingresado en el buscador"""
-            idc = txt_buscar_exp.get().strip()  # Toma el texto del entry y limpia los espacios vacíos
+        def db_buscar_asesoria():
+            """Recupera la descripción y fecha de una asesoría usando el ID ingresado en el buscador"""
+            idc = txt_buscar_ase.get().strip()  # Toma el texto del entry y limpia los espacios vacíos
             if not idc:  # Validación de campo vacío
-                messagebox.showwarning("Aviso", "Ingrese un ID de Expediente.")
+                messagebox.showwarning("Aviso", "Ingrese un ID de Asesoría.")
                 return
             try:
                 conn = sqlite3.connect(RUTA_BD)  # Inicia conexión con el archivo
                 cur = conn.cursor()
-                cur.execute("SELECT CASO FROM Caso WHERE IDC = ?", (idc,))  # Consulta SQL segura
+                cur.execute("SELECT CASO, FECHA FROM Aseroria WHERE IDC = ?", (idc,))  # Consulta SQL segura sobre la tabla Aseroria[cite: 3]
                 resultado = cur.fetchone()  # Extrae la primera coincidencia
                 conn.close()
 
-                txt_resultado_exp.delete("1.0", "end")  # Limpia la caja de texto antes de insertar nuevos datos
+                txt_resultado_ase_view.delete("1.0", "end")  # Limpia la caja de texto antes de insertar nuevos datos
                 if resultado:
-                    txt_resultado_exp.insert("1.0", resultado[0])  # Escribe el texto de la base de datos
+                    # Escribe los datos formateados con la información obtenida
+                    txt_resultado_ase_view.insert("1.0", f"Fecha de Registro: {resultado[1]}\n\nDetalles del Caso:\n{resultado[0]}")
                 else:
-                    txt_resultado_exp.insert("1.0", "No se encontró ningún expediente con ese ID.")
+                    txt_resultado_ase_view.insert("1.0", "No se encontró ninguna asesoría con ese ID en el sistema.")
             except Exception as e:
-                messagebox.showerror("Error", f"Fallo al buscar expediente:\n{e}")
+                messagebox.showerror("Error", f"Fallo al buscar la asesoría:\n{e}")
 
         def db_cargar_recados():
-            """Consulta todos los IDs de recados existentes y los inserta en el menú desplegable"""
+            """Consulta todos los IDs de recados existentes en la base de datos real y los inserta en el ComboBox"""
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("SELECT IDR FROM Recado")  # Trae toda la columna de identificadores
+                cur.execute("SELECT IDR FROM Recado")  # Trae toda la columna de identificadores reales de la tabla Recado[cite: 3]
                 ids = [str(r[0]) for r in cur.fetchall()]  # Convierte las tuplas SQL en una lista normal de Python
                 conn.close()
                 
                 if ids:
-                    cmb_recados.configure(values=ids)  # Asigna la lista al ComboBox
+                    cmb_recados.configure(values=ids)  # Asigna los IDs encontrados al ComboBox dinámicamente
                     cmb_recados.set(ids[0])  # Muestra el primer ID por defecto
+                    db_leer_recado(ids[0])  # Fuerza la lectura inicial del primer recado encontrado
                 else:
                     cmb_recados.configure(values=["Sin recados"])
                     cmb_recados.set("Sin recados")
-            except:
-                pass  # Si falla (ej. tabla no existe), no rompe el programa, simplemente se queda vacío
+            except Exception as e:
+                cmb_recados.configure(values=["Error de BD"])
+                cmb_recados.set("Error de BD")
 
         def db_leer_recado(idr_seleccionado):
             """Se ejecuta automáticamente al seleccionar un recado distinto en el menú desplegable"""
-            if idr_seleccionado == "Sin recados": return  # Si la lista está vacía, no hace nada
+            if idr_seleccionado in ("Sin recados", "Error de BD"): return  # Si la lista está vacía o falló, no hace nada
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("SELECT RECADO FROM Recado WHERE IDR = ?", (idr_seleccionado,))
+                cur.execute("SELECT RECADO FROM Recado WHERE IDR = ?", (idr_seleccionado,))  # Consulta los recados reales de la BD[cite: 3]
                 resultado = cur.fetchone()
                 conn.close()
 
                 txt_contenido_recado.delete("1.0", "end")  # Borra el recado anterior de la pantalla
                 if resultado:
-                    txt_contenido_recado.insert("1.0", resultado[0])  # Muestra el nuevo mensaje
+                    txt_contenido_recado.insert("1.0", resultado[0])  # Muestra el nuevo mensaje real
             except Exception as e:
                 messagebox.showerror("Error", f"Fallo al leer recado:\n{e}")
 
@@ -433,7 +436,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)", (idc, detalles, fecha))
+                cur.execute("INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)", (idc, detalles, fecha))  # Guarda datos en Aseroria[cite: 3]
                 conn.commit()  # Confirma y guarda el cambio permanente en SQLite
                 conn.close()
                 messagebox.showinfo("Éxito", "Asesoría registrada correctamente.")
@@ -480,36 +483,38 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             except Exception as e:
                 messagebox.showerror("Error", f"Error al agendar audiencia:\n{e}")
 
-        # --- CONSTRUCCIÓN VISUAL: VISTA EXPEDIENTES ---
-        ctk.CTkLabel(master=vista_expedientes, text="PANEL PRINCIPAL - EXPEDIENTES", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
-        ctk.CTkLabel(master=vista_expedientes, text="ID del Expediente (IDC):", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
+        # --- CONSTRUCCIÓN VISUAL: VISTA CONSULTAR ASESORÍA (Antes Ver Expediente) ---
+        ctk.CTkLabel(master=vista_ver_asesoria, text="PANEL PRINCIPAL - CONSULTAR ASESORÍAS", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
+        ctk.CTkLabel(master=vista_ver_asesoria, text="ID de la Asesoría Guardada (IDC):", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
         
         # Sub-contenedor transparente para alinear el Entry de texto y el Botón de búsqueda de manera horizontal
-        frame_buscar_exp = ctk.CTkFrame(master=vista_expedientes, fg_color="transparent")
-        frame_buscar_exp.pack(fill="x", padx=40, pady=(0, 10))
+        frame_buscar_ase = ctk.CTkFrame(master=vista_ver_asesoria, fg_color="transparent")
+        frame_buscar_ase.pack(fill="x", padx=40, pady=(0, 10))
         
-        txt_buscar_exp = ctk.CTkEntry(master=frame_buscar_exp, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", width=250, placeholder_text="Ej. C-001")
-        txt_buscar_exp.pack(side="left", padx=(0, 10))
+        txt_buscar_ase = ctk.CTkEntry(master=frame_buscar_ase, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", width=250, placeholder_text="Ej. A-123")
+        txt_buscar_ase.pack(side="left", padx=(0, 10))
         
-        # Botón que ejecuta la función db_buscar_expediente al hacerle clic
-        ctk.CTkButton(master=frame_buscar_exp, text="🔍 Buscar", fg_color="#4E342E", hover_color="#5D4037", width=100, command=db_buscar_expediente).pack(side="left")
+        # Botón que ejecuta la función db_buscar_asesoria al hacerle clic
+        ctk.CTkButton(master=frame_buscar_ase, text="🔍 Buscar", fg_color="#4E342E", hover_color="#5D4037", width=100, command=db_buscar_asesoria).pack(side="left")
         
-        ctk.CTkLabel(master=vista_expedientes, text="Descripción del Caso:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
-        txt_resultado_exp = ctk.CTkTextbox(master=vista_expedientes, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=150)
-        txt_resultado_exp.pack(fill="x", padx=40, pady=(0, 10))
+        ctk.CTkLabel(master=vista_ver_asesoria, text="Historial y Detalles de la Asesoría:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
+        txt_resultado_ase_view = ctk.CTkTextbox(master=vista_ver_asesoria, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=150)
+        txt_resultado_ase_view.pack(fill="x", padx=40, pady=(0, 10))
 
-        # --- CONSTRUCCIÓN VISUAL: VISTA RECADOS ---
-        ctk.CTkLabel(master=vista_recados, text="PANEL PRINCIPAL - RECADOS", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
-        ctk.CTkLabel(master=vista_recados, text="Seleccionar Recado (IDR):", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
+        # --- CONSTRUCCIÓN VISUAL: VISTA RECADOS REALES ---
+        ctk.CTkLabel(master=vista_recados, text="PANEL PRINCIPAL - RECADOS DEL SISTEMA", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
+        ctk.CTkLabel(master=vista_recados, text="Seleccionar Recado Registrado (IDR):", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
         
         # Menú desplegable que detona la lectura en la BD automáticamente (command=db_leer_recado) al cambiar su valor
         cmb_recados = ctk.CTkComboBox(master=vista_recados, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", command=db_leer_recado)
         cmb_recados.pack(anchor="w", padx=40, pady=(0, 10))
-        db_cargar_recados()  # Ejecuta la función por primera vez para poblar el menú justo después de crearlo
         
         ctk.CTkLabel(master=vista_recados, text="Mensaje del Recado:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
         txt_contenido_recado = ctk.CTkTextbox(master=vista_recados, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=150)
         txt_contenido_recado.pack(fill="x", padx=40, pady=(0, 10))
+
+        # ¡CORREGIDO! db_cargar_recados() se ejecuta ahora al final, cuando txt_contenido_recado ya se creó en memoria
+        db_cargar_recados()  
 
         # --- CONSTRUCCIÓN VISUAL: VISTA ASESORÍAS ---
         ctk.CTkLabel(master=vista_asesoria, text="REGISTRAR ASESORÍA", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
@@ -537,10 +542,12 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         txt_id_aud = ctk.CTkEntry(master=vista_audiencia, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", width=250)
         txt_id_aud.pack(anchor="w", padx=40, pady=(0, 10))
         
+        # Entrada para registrar la fecha y hora de la audiencia programada
         ctk.CTkLabel(master=vista_audiencia, text="Fecha y Hora:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(5, 2))
         txt_fecha_aud = ctk.CTkEntry(master=vista_audiencia, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", width=250, placeholder_text="Ej. 15/08/2026 10:30 AM")
         txt_fecha_aud.pack(anchor="w", padx=40, pady=(0, 10))
         
+        # Entrada para escribir el juzgado físico asignado por los tribunales
         ctk.CTkLabel(master=vista_audiencia, text="Juzgado / Sala:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(5, 2))
         txt_juzgado = ctk.CTkEntry(master=vista_audiencia, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", width=350)
         txt_juzgado.pack(anchor="w", padx=40, pady=(0, 15))
@@ -582,7 +589,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
     if "JEFE" in rol or "SUPERUSUARIO" in rol:
         mostrar_vista_inicio()  # Para el jefe usa el sistema de borrado (destroy)
     elif "ABOGADO" in rol:
-        vista_expedientes.tkraise()  # Para el abogado levanta la ventana de Expedientes
+        vista_ver_asesoria.tkraise()  # Para el abogado levanta por defecto la nueva ventana de Ver Asesoría
 
     # Carga inicial por defecto en el panel blanco al abrir el sistema
     ventana_tablero.mainloop()
