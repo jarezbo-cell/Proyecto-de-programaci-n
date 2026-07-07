@@ -12,7 +12,7 @@ RUTA_BD = "C:\\Users\\drago\\OneDrive\\Escritorio\\BD despacho.db"
 # Listas de tuplas que definen el (Texto, Icono) de los botones laterales según cada rol
 BOTONES_JEFE = [("DAR DE ALTA O BAJA USUARIOS", "👥"), ("ASIGNAR CASO", "⚖️"), ("PAGO DE NOMINA DE EMPLEADOS", "🪙")]
 BOTONES_PASANTE = [("REVISAR CASO", "🔍"), ("SUBIR CASO", "🔼"), ("REDACTAR RECADO", "✍️")]
-BOTONES_ABOGADO = [("VER ASESORÍA", "📁"), ("VER RECADO", "✉️"), ("REGISTRAR ASESORÍA", "📝"), ("AGENDAR AUDIENCIA", "📅")]
+BOTONES_ABOGADO = [("VER CASO", "📁"), ("VER RECADO", "✉️"), ("REGISTRAR CASO", "📝"), ("AGENDAR AUDIENCIA", "📅")]
 
 
 # ==========================================================
@@ -256,7 +256,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
                 
                 if existe:
                     # SI YA EXISTE: Pregunta de confirmación para actualización de datos
-                    confirmar = messagebox.askyesno("Usuario Existente", f"El ID '{idu}' ya pertenece a '{existe[0]}'.\n¿Desea actualizar sus datos con la nueva información?")
+                    confirmar = messagebox.askyesno("Usuario Existente", f"El ID '{idu}' ya belongs a '{existe[0]}'.\n¿Desea actualizar sus datos con la nueva información?")
                     if not confirmar:
                         conexion.close()
                         return
@@ -359,9 +359,9 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
 
         # Poblamos el diccionario para luego conectarlo en el ciclo de botones del menú
         vistas_abogado = {
-            "VER ASESORÍA": vista_ver_asesoria,
+            "VER CASO": vista_ver_asesoria,
             "VER RECADO": vista_recados,
-            "REGISTRAR ASESORÍA": vista_asesoria,
+            "REGISTRAR CASO": vista_asesoria,
             "AGENDAR AUDIENCIA": vista_audiencia
         }
 
@@ -375,7 +375,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             try:
                 conn = sqlite3.connect(RUTA_BD)  # Inicia conexión con el archivo
                 cur = conn.cursor()
-                cur.execute("SELECT CASO, FECHA FROM Aseroria WHERE IDC = ?", (idc,))  # Consulta SQL segura sobre la tabla Aseroria[cite: 3]
+                cur.execute("SELECT CASO, FECHA FROM Aseroria WHERE IDC = ?", (idc,))  # Consulta SQL segura sobre la tabla Aseroria
                 resultado = cur.fetchone()  # Extrae la primera coincidencia
                 conn.close()
 
@@ -393,7 +393,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("SELECT IDR FROM Recado")  # Trae toda la columna de identificadores reales de la tabla Recado[cite: 3]
+                cur.execute("SELECT IDR FROM Recado")  # Trae toda la columna de identificadores reales de la tabla Recado
                 ids = [str(r[0]) for r in cur.fetchall()]  # Convierte las tuplas SQL en una lista normal de Python
                 conn.close()
                 
@@ -414,7 +414,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("SELECT RECADO FROM Recado WHERE IDR = ?", (idr_seleccionado,))  # Consulta los recados reales de la BD[cite: 3]
+                cur.execute("SELECT RECADO FROM Recado WHERE IDR = ?", (idr_seleccionado,))  # Consulta los recados reales de la BD
                 resultado = cur.fetchone()
                 conn.close()
 
@@ -436,7 +436,7 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
             try:
                 conn = sqlite3.connect(RUTA_BD)
                 cur = conn.cursor()
-                cur.execute("INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)", (idc, detalles, fecha))  # Guarda datos en Aseroria[cite: 3]
+                cur.execute("INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)", (idc, detalles, fecha))  # Guarda datos en Aseroria
                 conn.commit()  # Confirma y guarda el cambio permanente en SQLite
                 conn.close()
                 messagebox.showinfo("Éxito", "Asesoría registrada correctamente.")
@@ -500,6 +500,9 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         ctk.CTkLabel(master=vista_ver_asesoria, text="Historial y Detalles de la Asesoría:", font=("Arial", 12, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(10, 2))
         txt_resultado_ase_view = ctk.CTkTextbox(master=vista_ver_asesoria, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=150)
         txt_resultado_ase_view.pack(fill="x", padx=40, pady=(0, 10))
+        
+        # Botón Cerrar Sesión en vista_ver_asesoria
+        ctk.CTkButton(master=vista_ver_asesoria, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", text_color="#FFFFFF", font=("Arial", 12, "bold"), height=38, corner_radius=8, command=cerrar_sesion).pack(side="bottom", anchor="se", padx=40, pady=40)
 
         # --- CONSTRUCCIÓN VISUAL: VISTA RECADOS REALES ---
         ctk.CTkLabel(master=vista_recados, text="PANEL PRINCIPAL - RECADOS DEL SISTEMA", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
@@ -513,8 +516,10 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         txt_contenido_recado = ctk.CTkTextbox(master=vista_recados, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=150)
         txt_contenido_recado.pack(fill="x", padx=40, pady=(0, 10))
 
-        # ¡CORREGIDO! db_cargar_recados() se ejecuta ahora al final, cuando txt_contenido_recado ya se creó en memoria
         db_cargar_recados()  
+        
+        # Botón Cerrar Sesión en vista_recados
+        ctk.CTkButton(master=vista_recados, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", text_color="#FFFFFF", font=("Arial", 12, "bold"), height=38, corner_radius=8, command=cerrar_sesion).pack(side="bottom", anchor="se", padx=40, pady=40)
 
         # --- CONSTRUCCIÓN VISUAL: VISTA ASESORÍAS ---
         ctk.CTkLabel(master=vista_asesoria, text="REGISTRAR ASESORÍA", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
@@ -535,6 +540,9 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         txt_desc_ase = ctk.CTkTextbox(master=vista_asesoria, fg_color="#FFFFFF", text_color="#1F1711", border_color="#C2BCB4", border_width=1, height=120)
         txt_desc_ase.pack(fill="x", padx=40, pady=(0, 15))
         ctk.CTkButton(master=vista_asesoria, text="💾 Guardar Asesoría", fg_color="#2E7D32", hover_color="#1B5E20", font=("Arial", 12, "bold"), command=db_guardar_asesoria).pack(anchor="w", padx=40)
+        
+        # Botón Cerrar Sesión en vista_asesoria
+        ctk.CTkButton(master=vista_asesoria, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", text_color="#FFFFFF", font=("Arial", 12, "bold"), height=38, corner_radius=8, command=cerrar_sesion).pack(side="bottom", anchor="se", padx=40, pady=40)
 
         # --- CONSTRUCCIÓN VISUAL: VISTA AUDIENCIAS ---
         ctk.CTkLabel(master=vista_audiencia, text="AGENDAR AUDIENCIA", font=("Times New Roman", 22, "bold"), text_color="#1F1711").pack(anchor="w", padx=40, pady=(30, 10))
@@ -553,12 +561,8 @@ def abrir_tablero(rol, titulo_tarjeta, botones_lista, datos_usuario, mostrar_pes
         txt_juzgado.pack(anchor="w", padx=40, pady=(0, 15))
         ctk.CTkButton(master=vista_audiencia, text="📅 Agendar", fg_color="#1565C0", hover_color="#0D47A1", font=("Arial", 12, "bold"), command=db_agendar_audiencia).pack(anchor="w", padx=40)
         
-        # Botón rojo flotante ubicado en la esquina inferior derecha. Al usar .place() se mantiene fijo por encima del sistema de vistas.
-        btn_cerrar_sesion = ctk.CTkButton(
-            master=panel_derecho, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", 
-            text_color="#FFFFFF", font=("Arial", 12, "bold"), height=35, corner_radius=8, command=cerrar_sesion
-        )
-        btn_cerrar_sesion.place(relx=0.95, rely=0.95, anchor="se")
+        # Botón Cerrar Sesión en vista_audiencia
+        ctk.CTkButton(master=vista_audiencia, text="🛑 CERRAR SESIÓN", fg_color="#B71C1C", hover_color="#9A1B1B", text_color="#FFFFFF", font=("Arial", 12, "bold"), height=38, corner_radius=8, command=cerrar_sesion).pack(side="bottom", anchor="se", padx=40, pady=40)
 
     # ------------------------------------------------------
     # E. GENERACIÓN DINÁMICA DE BOTONES LATERALES
