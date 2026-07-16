@@ -1,0 +1,1402 @@
+import os  # Importa el módulo del sistema operativo para manejo de rutas de archivos si se requiere
+import sqlite3  # Importa la librería nativa para interactuar con bases de datos relacionales SQLite3
+from datetime import datetime  # Importa de forma correcta el objeto datetime para registrar estampas de tiempo
+from tkinter import messagebox  # Importa el submódulo nativa para lanzar ventanas emergentes de alertas y avisos
+import customtkinter as ctk  # Importa la librería externa CustomTkinter para maquetar interfaces de usuario modernas
+
+# =============================================================================================
+# CONFIGURACIONES GLOBALES Y VARIABLES MAESTRAS
+# =============================================================================================
+RUTA_BD = "C:\\Users\\angel\\Desktop\\BD Despacho\\BD despacho.db"
+# Colección de tuplas que definen la etiqueta de texto y el emoji de los botones de navegación según cada rol
+BOTONES_PASANTE = [
+    ("REDACTAR RECADO", "✍️"),
+    ("VER RECADO", "👀"),
+    ("SUBIR CASO", "🔼"),
+    ("REVISAR CASO", "🔍"),
+    ("VER NOMINA", "💰"),
+]
+BOTONES_ABOGADO = [
+    ("BUSCAR CASO", "🔍"),
+    ("MIS CASOS ASIGNADOS", "📌"),
+    ("SUBIR RECADO", "🔼"),
+    ("LEER RECADO", "✉️"),
+    ("AGENDAR AUDIENCIA", "📅"),
+    ("VER NOMINA", "💰"),
+]
+BOTONES_JEFE = [  # Se elimina la entrada "VER CASOS ASIGNADOS" para quitar esa pestaña del costado izquierdo del Jefe
+    ("ALTA Y BAJA DE USUARIOS", "👥"),  # Botón que da acceso al módulo de gestión de personal (altas/bajas/edición)
+    ("ASIGNAR CASO", "⚖️"),  # Botón que da acceso al módulo de vinculación de casos con abogados
+    ("VER CASOS", "🗂️"),  # Botón que da acceso al listado general de todos los casos registrados
+    ("MANDAR Y VER RECADO", "✉️"),  # Botón que da acceso a la vista combinada de envío y consulta de recados
+    ("PAGAR NOMINA", "🪙"),  # Botón que da acceso a la calculadora de nómina, ahora con historial y edición integrados
+    ("VER PAGOS REALIZADOS", "📊"),  # Botón que da acceso al histórico de pagos ya realizados (vista de solo lectura)
+]
+
+
+# =============================================================================================
+# LÓGICA COMPARTIDA DE LA BASE DE DATOS Y AYUDANTES DE INTERFAZ
+# =============================================================================================
+def ejecutar_sql(query, parametros=(), fetchone=False, fetchall=False, commit=False):
+    # Función empaquetadora central para evitar duplicar código de conexiones SQL a lo largo del programa
+    try:  # Abre un bloque de excepción para mitigar caídas imprevistas por bloqueos de base de datos
+        conn = sqlite3.connect(RUTA_BD)  # Establece la conexión directa con el archivo de base de datos relacional
+        cursor = conn.cursor()  # Instancia el cursor para poder transaccionar comandos SQL estructurados
+        cursor.execute(query, parametros)  # Ejecuta la consulta inyectando los parámetros de manera limpia y segura
+        res = None  # Define la variable de respuesta por defecto en un estado vacío
+        if fetchone:  # Evalúa si la lógica superior requiere únicamente extraer una sola tupla de la consulta
+            res = cursor.fetchone()  # Recupera el primer registro que coincida con los criterios de búsqueda
+        if fetchall:  # Evalúa si la lógica superior requiere extraer el set completo de registros encontrados
+            res = cursor.fetchall()  # Recupera todas las filas devueltas por la consulta estructurada
+        if commit:  # Evalúa si se trata de una transacción de escritura (INSERT, UPDATE o DELETE)
+            conn.commit()  # Asienta los cambios permanentemente en el almacenamiento físico del disco duro
+        rowcount = cursor.rowcount  # Captura la cantidad total de filas que resultaron afectadas por la sentencia
+        conn.close()  # Cierra la conexión de manera limpia para no saturar los accesos concurrentes al archivo
+        return res if (fetchone or fetchall) else rowcount  # Retorna las tuplas de datos o el conteo de filas afectadas
+    except sqlite3.Error as e:  # Atrapa fallos específicos de sintaxis o de conectividad propios del motor SQLite3
+        messagebox.showerror(
+            "Error SQL", str(e)
+        )  # Despliega una alerta emergente notificando la causa exacta del error de base de datos
+        return None  # Retorna un estado vacío para indicar que la ejecución no concluyó de forma exitosa
+
+
+def verificar_estructura_bd():
+    # Agrega de forma segura las columnas nuevas necesarias para rastrear quién redactó un recado
+    # y quién subió un caso, sin afectar bases de datos que ya existan con la estructura antigua
+    columnas_nuevas = [
+        ("Recado", "IDU_REDACTOR", "TEXT"),
+        ("Caso", "IDU_CREADOR", "TEXT"),
+    ]
+    try:  # Envuelve la verificación estructural en un bloque de excepción por seguridad
+        conn = sqlite3.connect(RUTA_BD)  # Abre la conexión directa hacia el archivo físico de la base de datos
+        cursor = conn.cursor()  # Instancia el cursor necesario para ejecutar sentencias DDL de estructura
+        for tabla, columna, tipo in columnas_nuevas:  # Recorre cada columna que se necesita garantizar que exista
+            try:  # Intenta agregar la columna asumiendo que aún no existe en la tabla
+                cursor.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")  # Ejecuta el ALTER TABLE necesario
+            except sqlite3.OperationalError:  # Se dispara si la columna ya fue agregada en una ejecución previa
+                pass  # Ignora el error de "columna duplicada" porque significa que ya estaba lista
+        conn.commit()  # Asienta cualquier cambio estructural aplicado sobre el archivo de base de datos
+        conn.close()  # Cierra la conexión de manera ordenada tras la verificación
+    except sqlite3.Error as e:  # Atrapa cualquier otro fallo de conectividad al intentar verificar la estructura
+        messagebox.showerror("Error de Estructura", str(e))  # Notifica al usuario si la verificación no pudo completarse
+
+
+def limpiar_y_titular(panel, titulo):
+    # Rutina estética encargada de limpiar el lienzo interactivo y pintar el encabezado de la sección activa
+    for widget in panel.winfo_children():  # Itera minuciosamente sobre cada elemento gráfico hospedado en el frame
+        widget.destroy()  # Remueve y destruye el elemento gráfico para prevenir superposiciones visuales entre pantallas
+    ctk.CTkLabel(
+        panel, text=titulo, font=("Times New Roman", 22, "bold"), text_color="#3E2723"
+    ).pack(
+        anchor="w", padx=40, pady=20
+    )  # Construye y empaqueta el encabezado elegante alineado a la izquierda con margen holgado
+
+
+# =============================================================================================
+# VISTAS DEL ROL: PASANTE (Y MÓDULOS COMPARTIDOS CON ABOGADO)
+# =============================================================================================
+def vista_pasante_redactar_recado(panel, callback_inicio, session):
+    # Genera el formulario interactivo para que el personal redacte un mensaje asociado a un ID único
+    limpiar_y_titular(panel, "✍️ REDACTAR NUEVO RECADO")  # Limpia la interfaz y renderiza el título superior elegante
+
+    ctk.CTkLabel(
+        panel, text="Código (IDR):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta informativa del identificador del recado
+    ent_idr = ctk.CTkEntry(
+        panel, width=350, fg_color="#FFFFFF"
+    )  # Inicializa el campo de entrada de texto plano para capturar el IDR
+    ent_idr.pack(anchor="w", padx=40, pady=5)  # Acopla el campo de entrada en el contenedor principal con espaciado
+
+    ctk.CTkLabel(
+        panel, text="Mensaje:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta indicadora para el cuerpo del mensaje
+    txt_msg = ctk.CTkTextbox(
+        panel, width=350, height=120, border_width=1, border_color="#C2BCB4"
+    )  # Crea una caja de texto multilínea ideal para descripciones amplias o recados largos
+    txt_msg.pack(anchor="w", padx=40, pady=5)  # Acopla la caja multilínea aplicando bordes definidos de color arena
+
+    def guardar():  # Subfunción interna disparada por el botón para procesar el almacenamiento del recado
+        idr, msg = ent_idr.get().strip(), txt_msg.get("1.0", "end-1c").strip()  # Extrae los textos removiendo espacios vacíos
+        if not idr or not msg:  # Valida condicionalmente si alguno de los dos campos lógicos se encuentra vacío
+            return messagebox.showwarning(
+                "Campos Vacíos", "Rellene el IDR y el Mensaje."
+            )  # Lanza aviso y frena la ejecución
+        if (
+            ejecutar_sql(
+                "INSERT INTO Recado (RECADO, IDR, IDU_REDACTOR) VALUES (?, ?, ?)",
+                (msg, idr, session["idu"]),
+                commit=True,
+            )
+            is not None
+        ):  # Ejecuta la inserción del recado en la tabla correspondiente, guardando también quién lo redactó
+            messagebox.showinfo(
+                "Éxito", f"Recado {idr} registrado."
+            )  # Muestra confirmación de éxito al usuario
+            callback_inicio()  # Invoca la rutina de retorno para enviar al usuario de vuelta a la pantalla de bienvenida
+
+    ctk.CTkButton(
+        panel, text="Guardar Recado", fg_color="#5D4037", command=guardar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Crea y empaqueta el botón de guardado con el color café corporativo
+
+
+def vista_ver_recados(panel, permitir_eliminar=False):
+    # Vista compartida entre Pasante, Abogado y Jefe: despliega los recados junto con el nombre de quien los redactó
+    titulo = "🗑️ VER Y ELIMINAR RECADOS" if permitir_eliminar else "👀 VER RECADOS"  # Ajusta el título según el permiso
+    limpiar_y_titular(panel, titulo)  # Limpia la interfaz y coloca el encabezado correspondiente
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea un marco con scroll bar automático ideal para albergar listados extensos
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Ajusta el contenedor scrolleable para expandirse en toda la pantalla
+
+    def refrescar():  # Subfunción interna que dibuja (o redibuja) el listado completo de recados
+        for w in scr.winfo_children():  # Itera sobre los elementos existentes en el contenedor scrolleable
+            w.destroy()  # Destruye cada tarjeta previa para evitar duplicados al refrescar
+        recados = ejecutar_sql(
+            "SELECT Recado.IDR, Recado.RECADO, Usuarios.NOMBRE FROM Recado "
+            "LEFT JOIN Usuarios ON Recado.IDU_REDACTOR = Usuarios.IDU",
+            fetchall=True,
+        )  # Cruza el recado con la tabla de usuarios para obtener el nombre real de quien lo redactó
+        if not recados:  # Evalúa si la consulta no arrojó ningún recado registrado
+            ctk.CTkLabel(
+                scr, text="No hay recados registrados.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra un aviso en cursiva indicando que no hay información
+        for r in recados or []:  # Itera cada recado devuelto por la consulta
+            t = ctk.CTkFrame(
+                scr, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=6
+            )  # Diseña una tarjeta blanca individual para presentar el recado
+            t.pack(fill="x", pady=4, padx=5)  # Acopla la tarjeta expandiéndola horizontalmente
+            autor = r[2] if r[2] else "Desconocido"  # Resuelve un nombre de respaldo si no se encontró coincidencia
+            ctk.CTkLabel(
+                t,
+                text=f"Código IDR: {r[0]}\nMensaje: {r[1]}\nRedactado por: {autor}",
+                font=("Arial", 11),
+                text_color="#3E2723",
+                justify="left",
+            ).pack(side="left", pady=8, padx=12, anchor="w")  # Imprime el detalle completo del recado y su autor
+
+            if permitir_eliminar:  # Solo el Jefe recibe la capacidad de eliminar recados desde esta vista
+                def eliminar(idr=r[0]):  # Captura el IDR actual como valor por defecto para evitar el bug de closures
+                    if ejecutar_sql("DELETE FROM Recado WHERE IDR = ?", (idr,), commit=True) is not None:
+                        messagebox.showinfo("Éxito", f"Recado {idr} eliminado.")  # Confirma la eliminación exitosa
+                        refrescar()  # Redibuja la lista para reflejar la eliminación de inmediato
+
+                ctk.CTkButton(
+                    t, text="Eliminar", fg_color="#C62828", width=90, command=eliminar
+                ).pack(side="right", padx=12, pady=8)  # Coloca el botón rojo de eliminación al lado derecho de la tarjeta
+
+    refrescar()  # Dibuja el listado inicial al entrar a la vista
+
+
+def vista_pasante_subir_caso(panel, callback_inicio, session):
+    # Construye el formulario técnico requerido para indexar nuevos expedientes legales al sistema unificado
+    limpiar_y_titular(panel, "🔼 SUBIR NUEVO CASO AL SISTEMA")  # Prepara la región gráfica e inserta el título descriptivo
+
+    ctk.CTkLabel(
+        panel, text="Código (IDC):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Genera la etiqueta visual para el campo del identificador de caso
+    ent_idc = ctk.CTkEntry(
+        panel, width=350, fg_color="#FFFFFF"
+    )  # Define la entrada de texto de fondo blanco para recolectar el IDC
+    ent_idc.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada de texto plano bajo los parámetros de diseño
+
+    ctk.CTkLabel(
+        panel, text="Descripción:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Genera la etiqueta visual correspondiente a los detalles del litigio
+    ent_cas = ctk.CTkEntry(
+        panel, width=350, fg_color="#FFFFFF"
+    )  # Define la caja de entrada para recolectar la descripción resumida del asunto
+    ent_cas.pack(anchor="w", padx=40, pady=5)  # Acopla el control gráfico respetando la alineación a la izquierda
+
+    def guardar():  # Función interna para validar y escribir los datos del nuevo expediente en la base de datos
+        idc, cas = ent_idc.get().strip(), ent_cas.get().strip()  # Obtiene el texto depurado de ambas cajas de entrada
+        if not idc or not cas:  # Verifica de forma estricta si el usuario omitió capturar algún dato requerido
+            return messagebox.showwarning(
+                "Campos Incompletos", "Ingrese IDC y Descripción."
+            )  # Despliega advertencia de seguridad
+        if (
+            ejecutar_sql(
+                "INSERT INTO Caso (IDC, CASO, ID_ABOGADO, IDU_CREADOR) VALUES (?, ?, NULL, ?)",
+                (idc, cas, session["idu"]),
+                commit=True,
+            )
+            is not None
+        ):  # Almacena el caso vinculando por defecto el abogado como nulo y guardando quién lo subió
+            ejecutar_sql(
+                "INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)",
+                (idc, cas, datetime.now().strftime("%d/%m/%Y")),
+                commit=True,
+            )  # Registra en paralelo el historial de asesoría estampando la fecha actual en formato regional
+            messagebox.showinfo("Éxito", f"Caso {idc} guardado en el sistema.")  # Notifica que los datos fueron guardados
+            callback_inicio()  # Lanza el retorno al menú principal limpiando el panel dinámico
+
+    ctk.CTkButton(
+        panel, text="Subir Caso", fg_color="#5D4037", command=guardar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Crea el botón de acción principal de inserción de expedientes
+
+
+def vista_pasante_revisar_caso(panel):
+    # Renderiza una interfaz de lectura scrolleable que lista todos los expedientes vigentes en la firma
+    limpiar_y_titular(panel, "🔍 REVISAR CASOS REGISTRADOS")  # Limpia los paneles interactivos y monta el título de la consulta
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea un marco con scroll bar automático ideal para albergar listados extensos
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Ajusta el contenedor scrolleable para expandirse en toda la pantalla
+
+    regs = ejecutar_sql(
+        "SELECT Caso.IDC, Caso.CASO, Aseroria.FECHA FROM Caso LEFT JOIN Aseroria ON Caso.IDC = Aseroria.IDC",
+        fetchall=True,
+    )  # Cruza de manera segura las tablas Caso y Asesoria por su IDC común para consolidar la información
+    if not regs:  # Evalúa el caso extremo en donde la consulta no retorne ninguna fila desde las tablas
+        ctk.CTkLabel(
+            scr,
+            text="No hay expedientes guardados.",
+            font=("Arial", 12, "italic"),
+            text_color="gray",
+        ).pack(pady=20)  # Pinta un aviso en cursiva indicando que la base de datos está vacía
+    for r in regs or []:  # Itera de forma segura sobre cada tupla de datos devuelta por la base de datos
+        t = ctk.CTkFrame(
+            scr,
+            fg_color="#FFFFFF",
+            border_color="#EFE7DC",
+            border_width=1,
+            corner_radius=8,
+        )  # Diseña una tarjeta de presentación blanca y estilizada con esquinas redondeadas para el caso
+        t.pack(fill="x", pady=5, padx=10)  # Despliega la tarjeta abarcando el ancho disponible del scrollview
+        ctk.CTkLabel(
+            t,
+            text=f"• IDC: {r[0]}\n• Descripción: {r[1]}\n• Fecha: {r[2]}",
+            justify="left",
+            font=("Arial", 11),
+            text_color="#3E2723",
+        ).pack(pady=10, padx=15, anchor="w")  # Imprime detalladamente las propiedades del expediente dentro de la tarjeta
+
+
+def vista_pasante_ver_nomina(panel, idu):
+    # Genera un desglose visual y formal de la última nómina cargada en función del identificador del empleado
+    limpiar_y_titular(panel, "💰 MI CONSULTA DE NÓMINA")  # Prepara el entorno gráfico y asigna el encabezado financiero
+    rec = ejecutar_sql(
+        "SELECT IDU, NOMBRE, [SALARIO BASE], ISR, TOTAL, ROL FROM Nomina WHERE IDU = ?",
+        (idu,),
+        fetchone=True,
+    )  # Recupera el registro exacto de nómina buscando por el identificador del usuario en sesión
+    if rec:  # Evalúa si la base de datos arrojó información salarial válida vinculada al empleado
+        box = ctk.CTkFrame(
+            panel, fg_color="#FFFFFF", border_color="#C2BCB4", border_width=1, corner_radius=10
+        )  # Instancia un contenedor blanco imitando la estructura de un recibo de pago formal
+        box.pack(fill="x", padx=40, pady=10)  # Acopla el marco de recibo de nómina con un espaciado perimetral armónico
+        txt = [  # Estructura una lista de cadenas formateadas para moldear el contenido del recibo
+            f"Identificador: {rec[0]}",
+            f"Nombre: {rec[1]}",
+            f"Puesto: {rec[5]}",
+            f"Salario Base: ${rec[2]:,.2f} MXN",
+            f"Retención ISR (10%): ${rec[3]:,.2f} MXN",
+            "-------------------------------------------------------------",
+            f"PAGO NETO: ${rec[4]:,.2f} MXN",
+        ]
+        for line in txt:  # Recorre paso a paso la lista de texto formateado para crear las etiquetas informativas
+            ctk.CTkLabel(
+                box, text=line, font=("Arial", 12), text_color="#3E2723"
+            ).pack(anchor="w", padx=20, pady=4)  # Empaqueta cada línea del recibo alineada a la izquierda con tipografía limpia
+    else:  # Bloque alterno ejecutado cuando el jefe no ha calculado o autorizado el salario del IDU consultado
+        ctk.CTkLabel(
+            panel,
+            text="⚠️ Nómina no procesada aún por el Jefe para su IDU.",
+            font=("Arial", 12, "bold"),
+            text_color="#B71C1C",
+        ).pack(anchor="w", padx=40, pady=10)  # Muestra una advertencia visual destacada en color rojo
+
+
+# =============================================================================================
+# VISTAS DEL ROL: ABOGADO
+# =============================================================================================
+def vista_abogado_buscar_caso(panel):
+    # Permite al cuerpo de abogados inspeccionar la totalidad histórica de asesorías registradas, y eliminarlas si ya no aplican
+    limpiar_y_titular(panel, "🔍 HISTÓRICO DE ASESORÍAS")  # Reinicia los paneles gráficos y establece el encabezado de búsqueda
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Inicializa el panel scrolleable para contener los registros históricos
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Empaqueta el marco expandiéndolo para aprovechar todo el espacio
+
+    def refrescar():  # Subfunción que dibuja o redibuja el listado completo de asesorías
+        for w in scr.winfo_children():  # Recorre los widgets existentes en el contenedor
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+        datos = ejecutar_sql(
+            "SELECT rowid, IDC, CASO, FECHA FROM Aseroria", fetchall=True
+        )  # Ejecuta la consulta de lectura de asesorías incluyendo el rowid único de cada renglón
+        if not datos:  # Evalúa si no existe ninguna asesoría registrada todavía
+            ctk.CTkLabel(
+                scr, text="No hay asesorías registradas.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra el aviso informativo si no hay resultados
+        for f in datos or []:  # Cicla de forma segura cada renglón recuperado del histórico de registros de asesorías
+            t = ctk.CTkFrame(
+                scr,
+                fg_color="#FFFFFF",
+                border_color="#EFE7DC",
+                border_width=1,
+                corner_radius=6,
+            )  # Diseña un contenedor individual blanco tipo tarjeta para encapsular la asesoría
+            t.pack(fill="x", pady=4, padx=5)  # Acopla la tarjeta dándole un margen sutil para separarla de las demás
+            ctk.CTkLabel(
+                t,
+                text=f"Caso IDC: {f[1]} | Fecha: {f[3]}\nAsunto: {f[2]}",
+                font=("Arial", 11),
+                text_color="#3E2723",
+                justify="left",
+            ).pack(side="left", pady=8, padx=12, anchor="w")  # Pinta los datos internos de la asesoría justificando el texto a la izquierda
+
+            def eliminar(rid=f[0]):  # Captura el rowid actual como valor por defecto para evitar el bug de closures
+                if ejecutar_sql("DELETE FROM Aseroria WHERE rowid = ?", (rid,), commit=True) is not None:
+                    messagebox.showinfo("Éxito", "Registro eliminado del histórico.")  # Confirma la eliminación exitosa
+                    refrescar()  # Redibuja la lista para reflejar la eliminación de inmediato
+
+            ctk.CTkButton(
+                t, text="Eliminar", fg_color="#C62828", width=90, command=eliminar
+            ).pack(side="right", padx=12, pady=8)  # Coloca el botón rojo de eliminación al lado derecho de la tarjeta
+
+    refrescar()  # Dibuja el listado inicial al entrar a la vista
+
+
+def vista_abogado_ver_mis_casos(panel, session):
+    # Muestra al abogado en sesión únicamente los casos que le fueron asignados a él directamente
+    limpiar_y_titular(panel, "📌 MIS CASOS ASIGNADOS")  # Limpia el lienzo y coloca el título personalizado del listado
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea el contenedor scrolleable para el listado de casos propios
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor en el espacio disponible
+
+    regs = ejecutar_sql(
+        "SELECT IDC, CASO FROM Caso WHERE ID_ABOGADO = ?", (session["idu"],), fetchall=True
+    )  # Filtra los casos cuya columna ID_ABOGADO coincide con el IDU del abogado en sesión
+    if not regs:  # Evalúa si el abogado todavía no tiene ningún caso asignado
+        ctk.CTkLabel(
+            scr, text="Aún no tiene casos asignados.", font=("Arial", 12, "italic"), text_color="gray"
+        ).pack(pady=20)  # Muestra el aviso informativo si no hay resultados
+    for r in regs or []:  # Itera cada caso asignado a este abogado en específico
+        t = ctk.CTkFrame(
+            scr, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+        )  # Diseña la tarjeta individual para cada caso propio
+        t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola horizontalmente
+        ctk.CTkLabel(
+            t,
+            text=f"• IDC: {r[0]}\n• Descripción: {r[1]}",
+            justify="left",
+            font=("Arial", 11),
+            text_color="#3E2723",
+        ).pack(pady=10, padx=15, anchor="w")  # Imprime los detalles del caso dentro de la tarjeta
+
+
+def vista_abogado_agendar_audiencia(panel, callback_inicio):
+    # Construye el módulo operativo para programar audiencias vinculadas a un expediente específico
+    limpiar_y_titular(panel, "📅 AGENDAR AUDIENCIA JUDICIAL")  # Reestablece los controles gráficos y monta el título de la agenda
+
+    ctk.CTkLabel(
+        panel, text="Código Caso (IDC):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta informativa asociada a la clave del expediente
+    ent_idc = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa el campo de entrada de texto plano para el IDC
+    ent_idc.pack(anchor="w", padx=40, pady=5)  # Acopla el control en la interfaz siguiendo los márgenes estándar
+
+    ctk.CTkLabel(
+        panel, text="Juzgado / Detalles:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta para especificar la sede judicial o pormenores de la cita
+    ent_det = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada para capturar los pormenores
+    ent_det.pack(anchor="w", padx=40, pady=5)  # Monta el control gráfico con espaciado vertical regulado
+
+    ctk.CTkLabel(
+        panel, text="Fecha (DD/MM/AAAA):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta que indica el formato de fecha requerido
+    ent_fec = ctk.CTkEntry(
+        panel, width=350, fg_color="#FFFFFF", placeholder_text="24/11/2026"
+    )  # Inicializa la entrada de texto incluyendo un ejemplo de formato gris como guía
+    ent_fec.pack(anchor="w", padx=40, pady=5)  # Inserta la caja de texto en la vista actual
+
+    def guardar():  # Procesa la inserción de la audiencia agendada convirtiéndola en una entrada especial en el historial
+        idc, det, fec = (
+            ent_idc.get().strip(),
+            ent_det.get().strip(),
+            ent_fec.get().strip(),
+        )  # Extrae y limpia el texto de todos los campos del formulario
+        if not idc or not det or not fec:  # Verifica de manera estricta que no existan campos vacíos en el formulario
+            return messagebox.showwarning("Incompletos", "Complete todas las casillas.")  # Frena la inserción si faltan datos
+        if (
+            ejecutar_sql(
+                "INSERT INTO Aseroria (IDC, CASO, FECHA) VALUES (?, ?, ?)",
+                (idc, f"AUDIENCIA: {det}", fec),
+                commit=True,
+            )
+            is not None
+        ):  # Almacena el registro agregando el prefijo AUDIENCIA al campo descriptivo
+            messagebox.showinfo("Éxito", "Audiencia agendada correctamente.")  # Informa al abogado del éxito de la agenda
+            callback_inicio()  # Redirige de forma automática al panel de inicio limpiando los formularios
+
+    ctk.CTkButton(
+        panel, text="Agendar Audiencia", fg_color="#5D4037", command=guardar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Instancia y posiciona el botón de confirmación de la agenda
+
+
+# =============================================================================================
+# VISTAS DEL ROL: JEFE
+# =============================================================================================
+def vista_jefe_alta_baja(panel, callback_inicio):
+    # Genera el panel de administración de personal para registrar altas o procesar bajas de trabajadores,
+    # y ahora incluye directamente debajo un cuadro con scroll que muestra a los usuarios ya dados de alta
+    limpiar_y_titular(panel, "👥 ALTA Y BAJA DE USUARIOS")  # Limpia la pantalla y establece el título administrativo de personal
+
+    ctk.CTkLabel(
+        panel, text="ID Usuario (IDU):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta identificadora para la clave del empleado
+    ent_idu = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada para capturar el IDU del trabajador
+    ent_idu.pack(anchor="w", padx=40, pady=5)  # Acopla el control en el panel administrativo
+
+    ctk.CTkLabel(
+        panel, text="Nombre Completo:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta correspondiente al nombre civil completo
+    ent_nom = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada para recolectar el nombre del personal
+    ent_nom.pack(anchor="w", padx=40, pady=5)  # Inserta la caja respetando los lineamientos de la cuadrícula
+
+    ctk.CTkLabel(
+        panel, text="Contraseña:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta descriptiva para la clave secreta del empleado
+    ent_pwd = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF", show="*")  # Inicializa la entrada enmascarando los caracteres con asteriscos
+    ent_pwd.pack(anchor="w", padx=40, pady=5)  # Posiciona de forma segura el control gráfico de contraseña
+
+    ctk.CTkLabel(
+        panel, text="Rol / Puesto:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta informativa sobre la jerarquía del puesto laboral
+    combo_rol = ctk.CTkComboBox(panel, values=["PASANTE", "ABOGADO", "JEFE", "SUPERUSUARIO"], width=350)  # Instancia un menú desplegable con roles fijos
+    combo_rol.pack(anchor="w", padx=40, pady=10)  # Posiciona el combo de selección con margen vertical adaptado
+
+    # Contenedor con scroll donde se dibujará el listado de usuarios ya dados de alta (reemplaza al botón "Ver Usuarios")
+    scr_usuarios = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea el marco scrolleable que alojará las tarjetas de cada usuario dado de alta
+
+    def refrescar_usuarios():  # Subfunción interna que dibuja (o redibuja) el listado completo de usuarios
+        for w in scr_usuarios.winfo_children():  # Recorre cada widget que ya existe dentro del contenedor scrolleable
+            w.destroy()  # Destruye la tarjeta previa para que no queden duplicados al refrescar el listado
+        regs = ejecutar_sql("SELECT IDU, NOMBRE, ROL FROM Usuarios", fetchall=True)  # Consulta todos los usuarios registrados
+        if not regs:  # Evalúa si no existe ningún usuario dado de alta
+            ctk.CTkLabel(
+                scr_usuarios, text="No hay usuarios registrados.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra el aviso informativo de tabla vacía
+        for r in regs or []:  # Itera cada usuario devuelto por la consulta
+            t = ctk.CTkFrame(
+                scr_usuarios, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+            )  # Diseña la tarjeta individual del usuario
+            t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola horizontalmente
+            ctk.CTkLabel(
+                t,
+                text=f"• IDU: {r[0]}\n• Nombre: {r[1]}\n• Rol: {r[2]}",
+                justify="left",
+                font=("Arial", 11),
+                text_color="#3E2723",
+            ).pack(side="left", pady=10, padx=15, anchor="w")  # Imprime los datos principales del usuario
+
+            def editar(idu=r[0], nombre=r[1], rol=r[2]):  # Captura los valores actuales por defecto para evitar closures erróneos
+                abrir_editor_usuario(panel, callback_inicio, idu, nombre, rol, vista_jefe_alta_baja)  # Abre el editor y regresa a esta misma vista
+
+            ctk.CTkButton(
+                t, text="Editar", fg_color="#5D4037", width=90, command=editar
+            ).pack(side="right", padx=12, pady=10)  # Coloca el botón de edición al lado derecho de la tarjeta
+
+    def alta():  # Rutina interna para insertar un nuevo usuario en la base de datos
+        idu, nom, pwd, rol = (
+            ent_idu.get().strip(),
+            ent_nom.get().strip(),
+            ent_pwd.get().strip(),
+            combo_rol.get(),
+        )  # Extrae y remueve espacios en blanco de las variables del formulario
+        if not idu or not nom or not pwd:  # Valida de manera estricta que no existan variables en estado vacío antes del INSERT
+            return messagebox.showwarning("Campos Vacíos", "Rellene todo para el alta.")  # Frena el alta si faltan datos
+        if (
+            ejecutar_sql(
+                "INSERT INTO Usuarios (IDU, NOMBRE, CONTRASEÑA, ROL) VALUES (?, ?, ?, ?)",
+                (idu, nom.upper(), pwd, rol),
+                commit=True,
+            )
+            is not None
+        ):  # Inserta el usuario guardando el nombre siempre en mayúsculas homogéneas
+            messagebox.showinfo("Éxito", f"Usuario {idu} dado de alta.")  # Informa al administrador el éxito del alta
+            ent_idu.delete(0, "end")  # Limpia el campo del IDU para permitir capturar un nuevo alta de inmediato
+            ent_nom.delete(0, "end")  # Limpia el campo del nombre para dejar el formulario listo para otro registro
+            ent_pwd.delete(0, "end")  # Limpia el campo de la contraseña por seguridad
+            refrescar_usuarios()  # Redibuja el listado para que el nuevo usuario aparezca al instante en el cuadro
+
+    def baja():  # Rutina interna para revocar y eliminar usuarios del sistema corporativo
+        idu = ent_idu.get().strip()  # Recupera el identificador único ingresado en el campo de texto
+        if not idu:  # Valida condicionalmente que el identificador no se encuentre vacío
+            return messagebox.showwarning("Atención", "Escriba el IDU a dar de baja.")  # Muestra alerta restrictiva
+        if (
+            ejecutar_sql("DELETE FROM Usuarios WHERE IDU = ?", (idu,), commit=True)
+            > 0
+        ):  # Ejecuta la sentencia DELETE y evalúa si eliminó registros basándose en el rowcount
+            messagebox.showinfo("Éxito", f"Usuario {idu} eliminado.")  # Lanza aviso confirmando la remoción del registro
+            ent_idu.delete(0, "end")  # Limpia el campo del IDU tras la baja exitosa
+            refrescar_usuarios()  # Redibuja el listado para reflejar la baja de inmediato
+        else:  # Bloque ejecutado si la consulta DELETE afectó cero filas (IDU inexistente)
+            messagebox.showerror("Error", "El IDU no existe.")  # Muestra ventana emergente de error crítico al jefe
+
+    f_btns = ctk.CTkFrame(panel, fg_color="transparent")  # Instancia una subestructura invisible para alinear botones horizontalmente
+    f_btns.pack(anchor="w", padx=40, pady=15)  # Acopla el subcontenedor de botones alineado a la izquierda
+    ctk.CTkButton(
+        f_btns, text="Registrar Alta", fg_color="#2E7D32", command=alta, width=150
+    ).pack(side="left", padx=5)  # Crea y empaqueta el botón de alta con un color verde institucional
+    ctk.CTkButton(
+        f_btns, text="Procesar Baja", fg_color="#C62828", command=baja, width=150
+    ).pack(side="left", padx=5)  # Crea y empaqueta el botón de baja con un color rojo de advertencia
+
+    ctk.CTkLabel(
+        panel, text="Usuarios Dados de Alta:", font=("Arial", 13, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(10, 0))  # Coloca el subtítulo que antecede al cuadro de usuarios
+    scr_usuarios.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor scrolleable de usuarios en el espacio restante
+    refrescar_usuarios()  # Dibuja el listado de usuarios inicial en cuanto se entra a la vista
+
+
+def abrir_editor_usuario(panel, callback_inicio, idu, nombre_actual, rol_actual, vista_retorno=None):
+    # Genera el formulario para actualizar la información (nombre, contraseña y rol) de un usuario ya existente
+    vista_retorno = vista_retorno or vista_jefe_alta_baja  # Define hacia qué vista regresar tras editar o cancelar
+    limpiar_y_titular(panel, f"✏️ EDITAR USUARIO: {idu}")  # Limpia el lienzo y coloca el encabezado con el IDU en edición
+
+    ctk.CTkLabel(
+        panel, text="Nombre Completo:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta descriptiva del nombre
+    ent_nom = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada de texto para el nombre
+    ent_nom.insert(0, nombre_actual)  # Precarga el campo con el nombre actual del usuario
+    ent_nom.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada de texto en el formulario
+
+    ctk.CTkLabel(
+        panel,
+        text="Nueva Contraseña (dejar vacío para no cambiarla):",
+        font=("Arial", 11, "bold"),
+        text_color="#3E2723",
+    ).pack(anchor="w", padx=40)  # Aclara que el campo de contraseña es opcional en la edición
+    ent_pwd = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF", show="*")  # Inicializa la entrada enmascarada de contraseña
+    ent_pwd.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada de contraseña en el formulario
+
+    ctk.CTkLabel(
+        panel, text="Rol / Puesto:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta del selector de rol
+    combo_rol = ctk.CTkComboBox(panel, values=["PASANTE", "ABOGADO", "JEFE", "SUPERUSUARIO"], width=350)  # Instancia el combo de roles
+    combo_rol.set(rol_actual)  # Preselecciona el rol actual del usuario en el combo
+    combo_rol.pack(anchor="w", padx=40, pady=10)  # Posiciona el combo de selección en el formulario
+
+    def actualizar():  # Subfunción que ejecuta el UPDATE con los nuevos valores capturados
+        nom, pwd, rol = ent_nom.get().strip(), ent_pwd.get().strip(), combo_rol.get()  # Extrae los valores actuales del formulario
+        if not nom:  # Verifica que el nombre no haya quedado vacío
+            return messagebox.showwarning("Campos Vacíos", "El nombre no puede quedar vacío.")  # Frena la actualización
+        if pwd:  # Evalúa si el jefe decidió también cambiar la contraseña del usuario
+            filas = ejecutar_sql(
+                "UPDATE Usuarios SET NOMBRE = ?, CONTRASEÑA = ?, ROL = ? WHERE IDU = ?",
+                (nom.upper(), pwd, rol, idu),
+                commit=True,
+            )  # Actualiza nombre, contraseña y rol en un mismo movimiento
+        else:  # Bloque ejecutado cuando el campo de contraseña se dejó vacío intencionalmente
+            filas = ejecutar_sql(
+                "UPDATE Usuarios SET NOMBRE = ?, ROL = ? WHERE IDU = ?",
+                (nom.upper(), rol, idu),
+                commit=True,
+            )  # Actualiza únicamente el nombre y el rol, preservando la contraseña original
+        if filas is not None:  # Evalúa si la sentencia UPDATE se ejecutó sin errores
+            messagebox.showinfo("Éxito", f"Usuario {idu} actualizado.")  # Notifica al jefe la actualización exitosa
+            vista_retorno(panel, callback_inicio)  # Regresa a la vista de origen ya refrescada con los datos nuevos
+
+    ctk.CTkButton(
+        panel, text="Guardar Cambios", fg_color="#2E7D32", command=actualizar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Instancia el botón de confirmación de los cambios
+    ctk.CTkButton(
+        panel,
+        text="Cancelar",
+        fg_color="#8D6E63",
+        command=lambda: vista_retorno(panel, callback_inicio),
+        width=200,
+    ).pack(anchor="w", padx=40, pady=5)  # Instancia el botón para regresar sin aplicar cambios
+
+
+def vista_jefe_asignar_caso(panel, callback_inicio):
+    # Genera el módulo que permite vincular la responsabilidad de un expediente a un abogado específico,
+    # y añade al costado tres cuadros con scroll: casos creados, abogados registrados y casos ya asignados
+    limpiar_y_titular(panel, "⚖️ ASIGNAR CASO A ABOGADO")  # Limpia la interfaz gráfica y establece el encabezado de asignaciones
+
+    contenedor = ctk.CTkFrame(panel, fg_color="transparent")  # Crea el contenedor horizontal que divide formulario y listados
+    contenedor.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor en el espacio restante de la vista
+
+    form_frame = ctk.CTkFrame(contenedor, fg_color="transparent")  # Subcontenedor izquierdo dedicado al formulario de asignación
+    form_frame.pack(side="left", fill="y", padx=(0, 20))  # Ancla el formulario al costado izquierdo con margen derecho
+
+    listas_frame = ctk.CTkFrame(contenedor, fg_color="transparent")  # Subcontenedor derecho dedicado a los tres cuadros informativos
+    listas_frame.pack(side="right", fill="both", expand=True)  # Expande el contenedor de listas en el espacio restante
+
+    ctk.CTkLabel(
+        form_frame, text="Código Caso (IDC):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w")  # Agrega la etiqueta descriptiva asociada al identificador del caso
+    ent_idc = ctk.CTkEntry(form_frame, width=280, fg_color="#FFFFFF")  # Inicializa la entrada de texto plano para recolectar el IDC
+    ent_idc.pack(anchor="w", pady=5)  # Posiciona la entrada de texto en el formulario
+
+    ctk.CTkLabel(
+        form_frame, text="IDU Abogado:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", pady=(10, 0))  # Agrega la etiqueta descriptiva vinculada al identificador del abogado asignado
+    ent_abg = ctk.CTkEntry(form_frame, width=280, fg_color="#FFFFFF")  # Inicializa la entrada para capturar el identificador del abogado
+    ent_abg.pack(anchor="w", pady=5)  # Acopla el elemento gráfico de recolección de manera alineada
+
+    # Cuadro con scroll que enlista todos los casos que se han creado en el sistema
+    ctk.CTkLabel(
+        listas_frame, text="📂 Casos Creados", font=("Arial", 12, "bold"), text_color="#3E2723"
+    ).pack(anchor="w")  # Coloca el subtítulo que antecede al primer cuadro informativo
+    scr_casos = ctk.CTkScrollableFrame(
+        listas_frame, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=130
+    )  # Crea el marco scrolleable que alojará los casos creados
+    scr_casos.pack(fill="both", expand=True, pady=(2, 10))  # Expande el cuadro dejando un margen inferior de separación
+
+    # Cuadro con scroll que enlista a los abogados registrados en la firma
+    ctk.CTkLabel(
+        listas_frame, text="🧑‍⚖️ Abogados Registrados", font=("Arial", 12, "bold"), text_color="#3E2723"
+    ).pack(anchor="w")  # Coloca el subtítulo que antecede al segundo cuadro informativo
+    scr_abogados = ctk.CTkScrollableFrame(
+        listas_frame, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=130
+    )  # Crea el marco scrolleable que alojará a los abogados registrados
+    scr_abogados.pack(fill="both", expand=True, pady=(2, 10))  # Expande el cuadro dejando un margen inferior de separación
+
+    # Cuadro con scroll que enlista los casos ya asignados junto con el nombre del abogado responsable
+    ctk.CTkLabel(
+        listas_frame, text="📁 Casos Ya Asignados", font=("Arial", 12, "bold"), text_color="#3E2723"
+    ).pack(anchor="w")  # Coloca el subtítulo que antecede al tercer cuadro informativo
+    scr_asignados = ctk.CTkScrollableFrame(
+        listas_frame, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=130
+    )  # Crea el marco scrolleable que alojará los casos ya asignados con su abogado
+    scr_asignados.pack(fill="both", expand=True, pady=(2, 0))  # Expande el cuadro ocupando el espacio restante
+
+    def refrescar_listas():  # Subfunción que dibuja o redibuja los tres cuadros informativos del costado
+        for w in scr_casos.winfo_children():  # Recorre los widgets existentes en el cuadro de casos creados
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+        for w in scr_abogados.winfo_children():  # Recorre los widgets existentes en el cuadro de abogados
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+        for w in scr_asignados.winfo_children():  # Recorre los widgets existentes en el cuadro de casos asignados
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+
+        casos = ejecutar_sql("SELECT IDC, CASO FROM Caso ORDER BY rowid ASC", fetchall=True)  # Consulta todos los casos creados en orden cronológico
+        if not casos:  # Evalúa si todavía no existe ningún caso creado
+            ctk.CTkLabel(
+                scr_casos, text="No hay casos creados.", font=("Arial", 11, "italic"), text_color="gray"
+            ).pack(pady=10)  # Muestra el aviso informativo si no hay resultados
+        for c in casos or []:  # Itera cada caso devuelto por la consulta
+            ctk.CTkLabel(
+                scr_casos,
+                text=f"• IDC: {c[0]}\n  {c[1]}",
+                font=("Arial", 10),
+                text_color="#3E2723",
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=4)  # Imprime el identificador y la descripción resumida de cada caso
+
+        abogados = ejecutar_sql(
+            "SELECT IDU, NOMBRE FROM Usuarios WHERE ROL = 'ABOGADO'", fetchall=True
+        )  # Consulta únicamente a los usuarios cuyo rol corresponde a abogado
+        if not abogados:  # Evalúa si todavía no existe ningún abogado registrado
+            ctk.CTkLabel(
+                scr_abogados, text="No hay abogados registrados.", font=("Arial", 11, "italic"), text_color="gray"
+            ).pack(pady=10)  # Muestra el aviso informativo si no hay resultados
+        for a in abogados or []:  # Itera cada abogado devuelto por la consulta
+            ctk.CTkLabel(
+                scr_abogados,
+                text=f"• IDU: {a[0]} — {a[1]}",
+                font=("Arial", 10),
+                text_color="#3E2723",
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=4)  # Imprime el identificador y nombre de cada abogado registrado
+
+        asignados = ejecutar_sql(
+            "SELECT Caso.IDC, Caso.CASO, Usuarios.NOMBRE FROM Caso "
+            "JOIN Usuarios ON Caso.ID_ABOGADO = Usuarios.IDU "
+            "WHERE Caso.ID_ABOGADO IS NOT NULL ORDER BY Caso.rowid ASC",
+            fetchall=True,
+        )  # Cruza los casos ya asignados con el nombre real del abogado responsable, en orden cronológico
+        if not asignados:  # Evalúa si todavía no existe ningún caso asignado
+            ctk.CTkLabel(
+                scr_asignados, text="No hay casos asignados.", font=("Arial", 11, "italic"), text_color="gray"
+            ).pack(pady=10)  # Muestra el aviso informativo si no hay resultados
+        for r in asignados or []:  # Itera cada caso asignado devuelto por la consulta
+            ctk.CTkLabel(
+                scr_asignados,
+                text=f"• IDC: {r[0]}\n  Abogado: {r[2]}",
+                font=("Arial", 10),
+                text_color="#3E2723",
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=4)  # Imprime el identificador del caso junto con el abogado responsable
+
+    def asignar():  # Ejecuta la modificación de asignación sobre la tabla de casos de la firma
+        idc, abg = ent_idc.get().strip(), ent_abg.get().strip()  # Captura y depura las variables de texto ingresadas
+        if not idc or not abg:  # Controla que ninguno de los dos parámetros obligatorios se encuentre en blanco
+            return messagebox.showwarning("Alerta", "Ingrese ambos códigos.")  # Interrumpe la operación arrojando aviso
+        filas = ejecutar_sql(
+            "UPDATE Caso SET ID_ABOGADO = ? WHERE IDC = ?", (abg, idc), commit=True
+        )  # Ejecuta la sentencia UPDATE para asociar la clave del abogado al expediente correspondiente
+        if filas and filas > 0:  # Evalúa a través del rowcount si la sentencia realmente modificó un registro válido
+            messagebox.showinfo(
+                "Éxito", f"Caso {idc} asignado al abogado {abg}."
+            )  # Notifica al jefe de la vinculación correcta
+            ent_idc.delete(0, "end")  # Limpia el campo del IDC para permitir capturar una nueva asignación de inmediato
+            ent_abg.delete(0, "end")  # Limpia el campo del IDU del abogado para dejar el formulario listo
+            refrescar_listas()  # Redibuja los tres cuadros informativos para reflejar la nueva asignación de inmediato
+        else:  # Bloque de escape por si el IDC provisto no coincide con ningún registro de la base de datos
+            messagebox.showerror("Error", "El IDC especificado no existe.")  # Alerta del error de identificación de caso
+
+    ctk.CTkButton(
+        form_frame, text="Asignar Caso", fg_color="#5D4037", command=asignar, width=200
+    ).pack(anchor="w", pady=15)  # Instancia y posiciona el botón de confirmación de asignación
+
+    refrescar_listas()  # Dibuja los tres cuadros informativos iniciales en cuanto se entra a la vista
+
+
+def vista_jefe_ver_casos(panel):
+    # Muestra la totalidad de los casos registrados separados en dos apartados: "Casos No Asignados" y
+    # "Casos Asignados", ambos ordenados de forma cronológica según su orden de creación en el sistema
+    limpiar_y_titular(panel, "🗂️ VER CASOS REGISTRADOS")  # Limpia el lienzo y coloca el título general del listado
+
+    ctk.CTkLabel(
+        panel, text="📂 Casos No Asignados", font=("Arial", 14, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(0, 5))  # Coloca el subtítulo que antecede al primer apartado
+    scr_no_asig = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=200
+    )  # Crea el contenedor scrolleable que alojará únicamente los casos sin abogado asignado
+    scr_no_asig.pack(fill="both", expand=True, padx=40, pady=(0, 15))  # Expande el primer apartado en el espacio disponible
+
+    ctk.CTkLabel(
+        panel, text="📁 Casos Asignados", font=("Arial", 14, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(0, 5))  # Coloca el subtítulo que antecede al segundo apartado
+    scr_asig = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=200
+    )  # Crea el contenedor scrolleable que alojará únicamente los casos ya asignados
+    scr_asig.pack(fill="both", expand=True, padx=40, pady=(0, 10))  # Expande el segundo apartado en el espacio restante
+
+    def refrescar():  # Subfunción que dibuja o redibuja ambos apartados de casos
+        for w in scr_no_asig.winfo_children():  # Recorre los widgets existentes en el apartado sin asignar
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+        for w in scr_asig.winfo_children():  # Recorre los widgets existentes en el apartado ya asignado
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+
+        regs = ejecutar_sql(
+            "SELECT Caso.IDC, Caso.CASO, u_creador.NOMBRE, u_abogado.NOMBRE FROM Caso "
+            "LEFT JOIN Usuarios u_creador ON Caso.IDU_CREADOR = u_creador.IDU "
+            "LEFT JOIN Usuarios u_abogado ON Caso.ID_ABOGADO = u_abogado.IDU "
+            "ORDER BY Caso.rowid ASC",
+            fetchall=True,
+        )  # Cruza dos veces la tabla de usuarios y ordena los casos de forma cronológica según su creación
+
+        no_asignados = [r for r in (regs or []) if not r[3]]  # Filtra únicamente los casos que aún no tienen abogado
+        asignados = [r for r in (regs or []) if r[3]]  # Filtra únicamente los casos que ya cuentan con abogado asignado
+
+        if not no_asignados:  # Evalúa si no existe ningún caso pendiente de asignar
+            ctk.CTkLabel(
+                scr_no_asig, text="No hay casos sin asignar.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra el aviso informativo si el apartado está vacío
+        for r in no_asignados:  # Itera cada caso sin asignar devuelto por la consulta
+            t = ctk.CTkFrame(
+                scr_no_asig, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+            )  # Diseña la tarjeta individual del caso sin asignar
+            t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola horizontalmente
+            creador = r[2] if r[2] else "Desconocido"  # Resuelve un nombre de respaldo si el caso es anterior a este cambio
+            ctk.CTkLabel(
+                t,
+                text=f"• IDC: {r[0]}\n• Descripción: {r[1]}\n• Subido por: {creador}",
+                justify="left",
+                font=("Arial", 11),
+                text_color="#3E2723",
+            ).pack(side="left", pady=10, padx=15, anchor="w")  # Imprime los detalles del caso sin asignar
+
+            def eliminar(idc=r[0]):  # Captura el IDC actual como valor por defecto para evitar el bug de closures
+                if ejecutar_sql("DELETE FROM Caso WHERE IDC = ?", (idc,), commit=True) is not None:
+                    ejecutar_sql("DELETE FROM Aseroria WHERE IDC = ?", (idc,), commit=True)  # Limpia también su historial asociado
+                    messagebox.showinfo("Éxito", f"Caso {idc} eliminado.")  # Confirma la eliminación exitosa
+                    refrescar()  # Redibuja ambos apartados para reflejar la eliminación de inmediato
+
+            ctk.CTkButton(
+                t, text="Eliminar", fg_color="#C62828", width=90, command=eliminar
+            ).pack(side="right", padx=12, pady=10)  # Coloca el botón rojo de eliminación al lado derecho de la tarjeta
+
+        if not asignados:  # Evalúa si no existe ningún caso ya asignado
+            ctk.CTkLabel(
+                scr_asig, text="No hay casos asignados.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra el aviso informativo si el apartado está vacío
+        for r in asignados:  # Itera cada caso asignado devuelto por la consulta
+            t = ctk.CTkFrame(
+                scr_asig, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+            )  # Diseña la tarjeta individual del caso ya asignado
+            t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola horizontalmente
+            creador = r[2] if r[2] else "Desconocido"  # Resuelve un nombre de respaldo si el caso es anterior a este cambio
+            ctk.CTkLabel(
+                t,
+                text=f"• IDC: {r[0]}\n• Descripción: {r[1]}\n• Subido por: {creador}\n• Abogado asignado: {r[3]}",
+                justify="left",
+                font=("Arial", 11),
+                text_color="#3E2723",
+            ).pack(side="left", pady=10, padx=15, anchor="w")  # Imprime los detalles del caso ya asignado
+
+            def eliminar(idc=r[0]):  # Captura el IDC actual como valor por defecto para evitar el bug de closures
+                if ejecutar_sql("DELETE FROM Caso WHERE IDC = ?", (idc,), commit=True) is not None:
+                    ejecutar_sql("DELETE FROM Aseroria WHERE IDC = ?", (idc,), commit=True)  # Limpia también su historial asociado
+                    messagebox.showinfo("Éxito", f"Caso {idc} eliminado.")  # Confirma la eliminación exitosa
+                    refrescar()  # Redibuja ambos apartados para reflejar la eliminación de inmediato
+
+            ctk.CTkButton(
+                t, text="Eliminar", fg_color="#C62828", width=90, command=eliminar
+            ).pack(side="right", padx=12, pady=10)  # Coloca el botón rojo de eliminación al lado derecho de la tarjeta
+
+    refrescar()  # Dibuja ambos apartados iniciales al entrar a la vista
+
+
+def vista_jefe_mandar_ver_recado(panel, callback_inicio, session):
+    # Vista combinada del jefe: permite redactar un nuevo recado y ver el historial completo con sus autores
+    limpiar_y_titular(panel, "✉️ MANDAR Y VER RECADOS")  # Limpia el lienzo y coloca el título de la vista combinada
+
+    ctk.CTkLabel(
+        panel, text="Código (IDR):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta del identificador del nuevo recado
+    ent_idr = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada de texto para el IDR
+    ent_idr.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada de texto en el formulario
+
+    ctk.CTkLabel(
+        panel, text="Mensaje:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Coloca la etiqueta del cuerpo del mensaje
+    txt_msg = ctk.CTkTextbox(
+        panel, width=350, height=80, border_width=1, border_color="#C2BCB4"
+    )  # Crea la caja multilínea para redactar el recado
+    txt_msg.pack(anchor="w", padx=40, pady=5)  # Posiciona la caja de texto en el formulario
+
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea el contenedor scrolleable donde se listará el historial de recados
+
+    def refrescar():  # Subfunción que dibuja o redibuja el historial completo de recados
+        for w in scr.winfo_children():  # Recorre los widgets existentes en el contenedor
+            w.destroy()  # Elimina cada tarjeta previa antes de redibujar
+        recados = ejecutar_sql(
+            "SELECT Recado.IDR, Recado.RECADO, Usuarios.NOMBRE FROM Recado "
+            "LEFT JOIN Usuarios ON Recado.IDU_REDACTOR = Usuarios.IDU",
+            fetchall=True,
+        )  # Consulta todos los recados cruzándolos con el nombre de quien los redactó
+        if not recados:  # Evalúa si no existe ningún recado registrado todavía
+            ctk.CTkLabel(
+                scr, text="No hay recados registrados.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=10)  # Muestra el aviso informativo si no hay resultados
+        for r in recados or []:  # Itera cada recado devuelto por la consulta
+            t = ctk.CTkFrame(
+                scr, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=6
+            )  # Diseña la tarjeta individual de cada recado
+            t.pack(fill="x", pady=4, padx=5)  # Acopla la tarjeta expandiéndola horizontalmente
+            autor = r[2] if r[2] else "Desconocido"  # Resuelve un nombre de respaldo si no se encontró coincidencia
+            ctk.CTkLabel(
+                t,
+                text=f"Código IDR: {r[0]}\nMensaje: {r[1]}\nRedactado por: {autor}",
+                font=("Arial", 11),
+                text_color="#3E2723",
+                justify="left",
+            ).pack(side="left", pady=8, padx=12, anchor="w")  # Imprime el detalle completo del recado y de su autor
+
+            def eliminar(idr=r[0]):  # Captura el IDR actual como valor por defecto para evitar el bug de closures
+                if ejecutar_sql("DELETE FROM Recado WHERE IDR = ?", (idr,), commit=True) is not None:
+                    messagebox.showinfo("Éxito", f"Recado {idr} eliminado.")  # Confirma la eliminación exitosa
+                    refrescar()  # Redibuja la lista para reflejar la eliminación de inmediato
+
+            ctk.CTkButton(
+                t, text="Eliminar", fg_color="#C62828", width=90, command=eliminar
+            ).pack(side="right", padx=12, pady=8)  # Coloca el botón rojo de eliminación al lado derecho de la tarjeta
+
+    def guardar():  # Subfunción que procesa el envío de un nuevo recado desde la vista del jefe
+        idr, msg = ent_idr.get().strip(), txt_msg.get("1.0", "end-1c").strip()  # Extrae y depura el texto de ambos campos
+        if not idr or not msg:  # Valida que ninguno de los dos campos se encuentre vacío
+            return messagebox.showwarning("Campos Vacíos", "Rellene el IDR y el Mensaje.")  # Frena el envío si faltan datos
+        if (
+            ejecutar_sql(
+                "INSERT INTO Recado (RECADO, IDR, IDU_REDACTOR) VALUES (?, ?, ?)",
+                (msg, idr, session["idu"]),
+                commit=True,
+            )
+            is not None
+        ):  # Inserta el recado guardando también el IDU del jefe que lo redactó
+            messagebox.showinfo("Éxito", f"Recado {idr} registrado.")  # Notifica el registro exitoso del recado
+            ent_idr.delete(0, "end")  # Limpia el campo del IDR para permitir un nuevo registro inmediato
+            txt_msg.delete("1.0", "end")  # Limpia el área de texto del mensaje redactado
+            refrescar()  # Redibuja el historial para reflejar el nuevo recado de inmediato
+
+    ctk.CTkButton(
+        panel, text="Enviar Recado", fg_color="#5D4037", command=guardar, width=200
+    ).pack(anchor="w", padx=40, pady=10)  # Instancia el botón de envío del nuevo recado
+
+    ctk.CTkLabel(
+        panel, text="Historial de Recados:", font=("Arial", 13, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(10, 0))  # Coloca el subtítulo que antecede al historial
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor scrolleable del historial
+    refrescar()  # Dibuja el historial inicial al entrar a la vista
+
+
+def vista_jefe_pagar_nomina(panel, callback_inicio):
+    # Proporciona la calculadora financiera para autorizar y asentar los sueldos en el histórico de nómina,
+    # incluye un cuadro con scroll de los usuarios dados de alta y su IDU, y además el listado de a quiénes
+    # ya se les pagó, con la opción de actualizar cada registro
+    limpiar_y_titular(panel, "🪙 PAGAR NOMINA DE EMPLEADOS")  # Limpia el panel dinámico y pinta el título financiero de nómina
+
+    ctk.CTkLabel(
+        panel, text="IDU Colaborador:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta indicadora para capturar la clave del empleado a remunerar
+    ent_idu = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la caja para introducir el IDU del trabajador
+    ent_idu.pack(anchor="w", padx=40, pady=5)  # Posiciona la caja de texto en la vista actual
+
+    ctk.CTkLabel(
+        panel, text="Salario Base ($):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta indicadora para ingresar el monto bruto percibido
+    ent_sal = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada numérica en formato de cadena
+    ent_sal.pack(anchor="w", padx=40, pady=5)  # Acopla el campo de salario respetando la alineación izquierda
+
+    # Cuadro con scroll que muestra los usuarios dados de alta junto con su IDU, para consultarlo al momento de pagar
+    ctk.CTkLabel(
+        panel, text="Usuarios Dados de Alta (IDU):", font=("Arial", 13, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(10, 0))  # Coloca el subtítulo que antecede al cuadro de usuarios dados de alta
+    scr_usuarios_nom = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1, height=120
+    )  # Crea el marco scrolleable que alojará el listado de usuarios dados de alta
+    scr_usuarios_nom.pack(fill="x", padx=40, pady=5)  # Expande el cuadro horizontalmente respetando el margen de la vista
+
+    def refrescar_usuarios_nomina():  # Subfunción que dibuja o redibuja el listado de usuarios dados de alta
+        for w in scr_usuarios_nom.winfo_children():  # Recorre los widgets existentes en el contenedor
+            w.destroy()  # Elimina cada tarjeta previa para evitar duplicados al refrescar
+        regs = ejecutar_sql("SELECT IDU, NOMBRE, ROL FROM Usuarios", fetchall=True)  # Consulta todos los usuarios registrados
+        if not regs:  # Evalúa si no existe ningún usuario dado de alta
+            ctk.CTkLabel(
+                scr_usuarios_nom, text="No hay usuarios registrados.", font=("Arial", 11, "italic"), text_color="gray"
+            ).pack(pady=10)  # Muestra el aviso informativo si no hay resultados
+        for r in regs or []:  # Itera cada usuario devuelto por la consulta
+            ctk.CTkLabel(
+                scr_usuarios_nom,
+                text=f"• IDU: {r[0]} — {r[1]} ({r[2]})",
+                font=("Arial", 10),
+                text_color="#3E2723",
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=3)  # Imprime el identificador, nombre y rol de cada usuario dado de alta
+
+    # Contenedor con scroll donde se dibujará el listado de "a quiénes ya se les pagó" (el historial de nómina)
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea el marco scrolleable que alojará las tarjetas de cada pago ya procesado
+
+    def refrescar():  # Subfunción interna que dibuja (o redibuja) el historial completo de pagos de nómina
+        for w in scr.winfo_children():  # Recorre cada widget que ya existe dentro del contenedor scrolleable
+            w.destroy()  # Destruye la tarjeta previa para que no queden duplicados al refrescar el listado
+        # Se incluye el "rowid" (identificador interno único de SQLite) para poder editar el registro exacto después
+        regs = ejecutar_sql(
+            "SELECT rowid, IDU, NOMBRE, [SALARIO BASE], ISR, TOTAL, ROL FROM Nomina", fetchall=True
+        )  # Consulta la totalidad de los recibos de nómina ya asentados, trayendo su rowid único
+        if not regs:  # Evalúa si todavía no existe ningún pago registrado en la tabla Nomina
+            ctk.CTkLabel(
+                scr, text="Aún no se ha procesado ningún pago.", font=("Arial", 12, "italic"), text_color="gray"
+            ).pack(pady=20)  # Muestra un aviso en cursiva indicando que no hay pagos que mostrar
+        for r in regs or []:  # Itera cada recibo devuelto por la consulta (o una lista vacía si no hay ninguno)
+            t = ctk.CTkFrame(
+                scr, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+            )  # Diseña una tarjeta blanca individual para presentar cada pago realizado
+            t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola en todo el ancho disponible
+            ctk.CTkLabel(
+                t,
+                text=(
+                    f"• IDU: {r[1]} | Nombre: {r[2]} | Puesto: {r[6]}\n"
+                    f"• Salario Base: ${r[3]:,.2f} MXN | ISR: ${r[4]:,.2f} MXN | Total pagado: ${r[5]:,.2f} MXN"
+                ),
+                justify="left",
+                font=("Arial", 11),
+                text_color="#3E2723",
+            ).pack(side="left", pady=10, padx=15, anchor="w")  # Imprime el detalle completo de ese pago dentro de la tarjeta
+
+            def actualizar(rid=r[0], idu_r=r[1], sal_actual=r[3]):  # Captura los valores actuales por defecto (evita el bug de closures)
+                abrir_editor_nomina(panel, callback_inicio, rid, idu_r, sal_actual)  # Abre el formulario de edición para ese pago puntual
+
+            ctk.CTkButton(
+                t, text="Actualizar", fg_color="#5D4037", width=100, command=actualizar
+            ).pack(side="right", padx=12, pady=10)  # Coloca el botón de actualización al lado derecho de la tarjeta
+
+    def pagar():  # Realiza las operaciones matemáticas de impuestos y asienta el registro contable definitivo
+        idu, sal_str = ent_idu.get().strip(), ent_sal.get().strip()  # Extrae y remueve espacios en blanco de las cajas de texto
+        if not idu or not sal_str:  # Controla de forma preventiva que las casillas contengan información para calcular
+            return messagebox.showwarning("Atención", "Complete las casillas.")  # Detiene la operación contable
+
+        emp = ejecutar_sql(
+            "SELECT NOMBRE, ROL FROM Usuarios WHERE IDU = ?", (idu,), fetchone=True
+        )  # Busca el nombre y el rol vigentes del colaborador directo en la tabla de usuarios
+        if not emp:  # Verifica primero si el identificador no coincide con ningún empleado de la firma
+            return messagebox.showerror("Error", "El IDU ingresado no existe.")  # Notifica el error de clave de usuario al jefe
+
+        try:  # Envuelve la conversión numérica para evitar que un valor no numérico rompa el programa
+            sal_base = float(sal_str)  # Convierte de forma explícita el texto salarial en un tipo de dato flotante numérico
+        except ValueError:  # Se dispara si el texto ingresado no puede interpretarse como un número
+            return messagebox.showerror("Error", "El Salario Base debe ser un número válido.")  # Informa el formato incorrecto
+
+        isr = sal_base * 0.10  # Aplica la deducción matemática fija del diez por ciento por concepto de retención de ISR
+        tot = sal_base - isr  # Deduce analíticamente el monto neto final restando la retención al salario bruto original
+        if (
+            ejecutar_sql(
+                "INSERT INTO Nomina (IDU, NOMBRE, [SALARIO BASE], ISR, TOTAL, ROL) VALUES (?, ?, ?, ?, ?, ?)",
+                (idu, emp[0], sal_base, isr, tot, emp[1]),
+                commit=True,
+            )
+            is not None
+        ):  # Inserta de manera estructurada el recibo de pago calculado en el histórico de nómina de la firma
+            messagebox.showinfo("Éxito", f"Pago cargado para {emp[0]}.")  # Muestra aviso confirmando el depósito cargado
+            ent_idu.delete(0, "end")  # Limpia el campo del IDU para permitir capturar un nuevo pago de inmediato
+            ent_sal.delete(0, "end")  # Limpia el campo del salario para dejar el formulario listo para otro registro
+            refrescar()  # Redibuja el historial de pagos para que el nuevo recibo aparezca al instante en la lista
+
+    ctk.CTkButton(
+        panel, text="Autorizar y Pagar", fg_color="#5D4037", command=pagar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Instancia y posiciona el botón de autorización de pagos financieros
+
+    ctk.CTkLabel(
+        panel, text="Historial de Pagos (a quiénes ya se les pagó):", font=("Arial", 13, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40, pady=(10, 0))  # Coloca el subtítulo que antecede al historial de pagos ya realizados
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor scrolleable del historial en el espacio restante
+    refrescar_usuarios_nomina()  # Dibuja el cuadro de usuarios dados de alta en cuanto se entra a la vista
+    refrescar()  # Dibuja el historial de pagos inicial en cuanto se entra a la vista
+
+
+def abrir_editor_nomina(panel, callback_inicio, rowid_nomina, idu_actual, salario_actual):
+    # Genera el formulario que permite actualizar (corregir) el salario base ya pagado de un registro puntual de nómina,
+    # recalculando automáticamente el ISR y el total neto con la misma fórmula usada al pagar por primera vez
+    limpiar_y_titular(panel, f"✏️ ACTUALIZAR PAGO DE NÓMINA: {idu_actual}")  # Limpia el lienzo y coloca el título con el IDU en edición
+
+    ctk.CTkLabel(
+        panel, text="IDU Colaborador:", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta informativa mostrando a quién pertenece este recibo
+    ent_idu = ctk.CTkEntry(panel, width=350, fg_color="#E0E0E0")  # Inicializa la entrada del IDU en gris para indicar que es de solo lectura
+    ent_idu.insert(0, idu_actual)  # Precarga el campo con el IDU actual del colaborador
+    ent_idu.configure(state="disabled")  # Bloquea la edición del IDU porque el registro ya pertenece a ese colaborador específico
+    ent_idu.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada deshabilitada en el formulario
+
+    ctk.CTkLabel(
+        panel, text="Nuevo Salario Base ($):", font=("Arial", 11, "bold"), text_color="#3E2723"
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta indicadora del nuevo monto a capturar
+    ent_sal = ctk.CTkEntry(panel, width=350, fg_color="#FFFFFF")  # Inicializa la entrada editable para el nuevo salario base
+    ent_sal.insert(0, f"{salario_actual:.2f}")  # Precarga el campo con el salario base actualmente registrado
+    ent_sal.pack(anchor="w", padx=40, pady=5)  # Posiciona la entrada de salario en el formulario
+
+    def actualizar():  # Subfunción que recalcula ISR/Total y ejecuta el UPDATE sobre el registro puntual de nómina
+        sal_str = ent_sal.get().strip()  # Extrae y depura el texto ingresado en el campo de nuevo salario
+        if not sal_str:  # Valida que el campo de salario no se haya dejado vacío
+            return messagebox.showwarning("Atención", "Ingrese el nuevo salario base.")  # Frena la actualización si falta el dato
+
+        try:  # Envuelve la conversión numérica para evitar que un valor no numérico rompa el programa
+            sal_base = float(sal_str)  # Convierte el texto capturado en un número flotante para poder operar con él
+        except ValueError:  # Se dispara si el texto ingresado no puede interpretarse como un número válido
+            return messagebox.showerror("Error", "El Salario Base debe ser un número válido.")  # Informa el error de formato
+
+        isr = sal_base * 0.10  # Recalcula la retención de ISR aplicando el mismo diez por ciento fijo usado en el pago original
+        tot = sal_base - isr  # Recalcula el monto neto final restando la nueva retención al nuevo salario bruto
+
+        filas = ejecutar_sql(
+            "UPDATE Nomina SET [SALARIO BASE] = ?, ISR = ?, TOTAL = ? WHERE rowid = ?",
+            (sal_base, isr, tot, rowid_nomina),
+            commit=True,
+        )  # Ejecuta el UPDATE dirigido exclusivamente a ese registro puntual usando su rowid único
+        if filas is not None:  # Evalúa si la sentencia UPDATE se ejecutó sin errores de base de datos
+            messagebox.showinfo("Éxito", f"Pago de {idu_actual} actualizado correctamente.")  # Notifica el éxito de la actualización
+            vista_jefe_pagar_nomina(panel, callback_inicio)  # Regresa a la vista de pagar nómina ya con el historial refrescado
+
+    ctk.CTkButton(
+        panel, text="Guardar Cambios", fg_color="#2E7D32", command=actualizar, width=200
+    ).pack(anchor="w", padx=40, pady=15)  # Instancia el botón de confirmación que guarda los cambios del recibo
+    ctk.CTkButton(
+        panel,
+        text="Cancelar",
+        fg_color="#8D6E63",
+        command=lambda: vista_jefe_pagar_nomina(panel, callback_inicio),
+        width=200,
+    ).pack(anchor="w", padx=40, pady=5)  # Instancia el botón para regresar sin aplicar ningún cambio al registro
+
+
+def vista_jefe_ver_pagos(panel):
+    # Muestra el histórico completo de todos los pagos de nómina ya procesados por el jefe
+    limpiar_y_titular(panel, "📊 PAGOS DE NÓMINA REALIZADOS")  # Limpia el lienzo y coloca el título del historial de pagos
+    scr = ctk.CTkScrollableFrame(
+        panel, fg_color="#F9F8F6", border_color="#C2BCB4", border_width=1
+    )  # Crea el contenedor scrolleable que alojará las tarjetas de cada pago
+    scr.pack(fill="both", expand=True, padx=40, pady=10)  # Expande el contenedor en el espacio disponible
+
+    regs = ejecutar_sql(
+        "SELECT IDU, NOMBRE, [SALARIO BASE], ISR, TOTAL, ROL FROM Nomina", fetchall=True
+    )  # Consulta la totalidad de los recibos de nómina ya asentados en el histórico
+    if not regs:  # Evalúa si todavía no se ha procesado ningún pago
+        ctk.CTkLabel(
+            scr, text="Aún no se ha procesado ningún pago.", font=("Arial", 12, "italic"), text_color="gray"
+        ).pack(pady=20)  # Muestra el aviso informativo si la tabla de nómina está vacía
+    for r in regs or []:  # Itera cada recibo devuelto por la consulta
+        t = ctk.CTkFrame(
+            scr, fg_color="#FFFFFF", border_color="#EFE7DC", border_width=1, corner_radius=8
+        )  # Diseña la tarjeta individual de cada pago realizado
+        t.pack(fill="x", pady=5, padx=10)  # Acopla la tarjeta expandiéndola horizontalmente
+        ctk.CTkLabel(
+            t,
+            text=(
+                f"• IDU: {r[0]} | Nombre: {r[1]} | Puesto: {r[5]}\n"
+                f"• Salario Base: ${r[2]:,.2f} MXN | ISR: ${r[3]:,.2f} MXN | Total pagado: ${r[4]:,.2f} MXN"
+            ),
+            justify="left",
+            font=("Arial", 11),
+            text_color="#3E2723",
+        ).pack(pady=10, padx=15, anchor="w")  # Imprime el detalle completo del pago dentro de la tarjeta
+
+
+# =============================================================================================
+# TABLERO DE CONTROL DE NAVEGACIÓN PRINCIPAL (DISEÑO UNIFICADO)
+# =============================================================================================
+def abrir_tablero(rol, titulo_tarjeta, botones, session):
+    # Orquesta y despliega la ventana principal de comandos adaptando dinámicamente los accesos según el rol validado
+    root = ctk.CTk()  # Inicializa la ventana principal que servirá de raíz estructural para el panel de control
+    root.title(f"Sistema Jurídico - Controles de {rol}")  # Asigna un título dinámico a la barra de la ventana usando el rol
+    root.geometry("1100x650")  # Define una resolución de pantalla base optimizada para paneles complejos
+    ctk.set_appearance_mode("light")  # Configura la paleta visual de apariencia en modalidad clara de forma explícita
+    root.configure(fg_color="#FFE7DC")  # Aplica el color beige claro perimetral exterior para mantener la identidad del software
+
+    base = ctk.CTkFrame(root, fg_color="#3E2723", corner_radius=15)  # Define un marco central oscuro que unifica el espacio interior
+    base.pack(pady=40, padx=40, fill="both", expand=True)  # Ajusta el marco central expandiéndolo simétricamente
+
+    sidebar = ctk.CTkFrame(base, fg_color="#3E2723", width=280)  # Crea la barra de navegación lateral izquierda de tono chocolate oscuro
+    sidebar.pack(side="left", fill="y", padx=20, pady=20)  # Fija el menú lateral a la izquierda abarcando la altura completa
+    sidebar.pack_propagate(False)  # Restringe la propagación para obligar al marco lateral a respetar sus dimensiones estáticas
+
+    info = ctk.CTkFrame(sidebar, fg_color="#5D4037", corner_radius=10)  # Diseña una tarjeta interior de perfil con un tono marrón más claro
+    info.pack(fill="x", padx=10, pady=(0, 20))  # Acopla la tarjeta informativa en la región superior de la barra lateral
+
+    panel_derecho = ctk.CTkFrame(base, fg_color="#F9F8F6", corner_radius=12)  # Crea el gran panel derecho de fondo blanco marfil para las vistas
+    panel_derecho.pack(side="right", fill="both", expand=True, padx=(0, 20), pady=20)  # Despliega el panel de visualización principal
+
+    panel_vistas = ctk.CTkFrame(panel_derecho, fg_color="transparent")  # Instancia un subcontenedor transparente que funcionará de lienzo dinámico
+    panel_vistas.pack(side="top", fill="both", expand=True)  # Expande el subcontenedor dinámico en la parte superior del panel
+
+    def show_home():  # Rutina interna encargada de restablecer el lienzo pintando la bienvenida predeterminada del rol
+        for w in panel_vistas.winfo_children():  # Itera minuciosamente sobre los componentes que residen en el lienzo dinámico
+            w.destroy()  # Remueve el componente viejo para dejar el lienzo totalmente en blanco
+        ctk.CTkLabel(
+            panel_vistas,
+            text=f"PANEL PRINCIPAL - {rol}",
+            font=("Times New Roman", 24, "bold"),
+            text_color="#3E2723",
+        ).pack(anchor="w", padx=40, pady=40)  # Pinta la etiqueta institucional de bienvenida al panel de control
+
+    # Componentes tipográficos y logotipos fijos agregados a la barra lateral de navegación
+    ctk.CTkLabel(sidebar, text="⚖️", font=("Arial", 32), text_color="#EFE7DC").pack(pady=(10, 2))  # Logotipo de balanza de la firma
+    ctk.CTkLabel(
+        sidebar,
+        text="BUFETE JURÍDICO & ASOCIADOS",
+        font=("Arial", 10, "bold"),
+        text_color="#EFE7DC",
+    ).pack(pady=(0, 15))  # Rótulo con el nombre comercial de la corporación jurídica
+    ctk.CTkLabel(
+        info, text=titulo_tarjeta, font=("Arial", 9, "bold"), text_color="#EFE7DC"
+    ).pack(pady=(10, 8))  # Imprime la cabecera correspondiente al perfil autenticado en la tarjeta de información
+    ctk.CTkLabel(
+        info,
+        text="👤",
+        font=("Arial", 24),
+        fg_color="#EFE7DC",
+        text_color="#3E2723",
+        width=40,
+        height=40,
+        corner_radius=20,
+    ).pack(pady=(0, 10))  # Icono circular simulando el avatar del usuario autenticado
+
+    # Despliega las credenciales reales recuperadas del diccionario de sesión activa del empleado
+    ctk.CTkLabel(
+        info, text=f"Nombre: {session['nombre']}", font=("Arial", 11), text_color="#FFF"
+    ).pack(anchor="w", padx=20)  # Muestra el nombre civil del usuario obtenido en la validación
+    ctk.CTkLabel(
+        info, text=f"ID: {session['idu']}", font=("Arial", 11), text_color="#FFF"
+    ).pack(anchor="w", padx=20)  # Muestra el identificador único del usuario en sesión
+    ctk.CTkLabel(
+        info, text=f"Rol: {rol}", font=("Arial", 11), text_color="#FFF"
+    ).pack(anchor="w", padx=20, pady=(0, 10))  # Muestra la jerarquía del rol del usuario activo
+
+    # Bucle dinámico estructurado para mapear, enlazar y renderizar los botones de acuerdo a la lista del rol
+    for texto, icono in botones:
+        cmd = None  # Inicializa la variable de comando en un estado vacío
+        if texto == "REDACTAR RECADO" or texto == "SUBIR RECADO":  # Mapea los botones asociados a la redacción de mensajes
+            cmd = lambda: vista_pasante_redactar_recado(panel_vistas, show_home, session)  # Vincula el módulo de redacción pasando la sesión activa
+        elif texto == "VER RECADO" or texto == "LEER RECADO":  # Mapea los botones que solo consultan recados con su autor
+            cmd = lambda: vista_ver_recados(panel_vistas, permitir_eliminar=False)  # Vincula la vista compartida de solo lectura
+        elif texto == "SUBIR CASO":  # Mapea la opción vinculada al registro primario de expedientes
+            cmd = lambda: vista_pasante_subir_caso(panel_vistas, show_home, session)  # Vincula el formulario de inserción pasando la sesión activa
+        elif texto == "REVISAR CASO":  # Mapea la opción que permite auditar expedientes de forma general
+            cmd = lambda: vista_pasante_revisar_caso(panel_vistas)  # Vincula la lista scrolleable de expedientes al botón
+        elif texto == "VER NOMINA":  # Mapea la opción que permite inspeccionar la nómina personal calculada
+            cmd = lambda: vista_pasante_ver_nomina(panel_vistas, session["idu"])  # Vincula la consulta de recibos pasando el IDU activo
+        elif texto == "BUSCAR CASO":  # Mapea la opción que despliega el histórico de asesorías de la firma
+            cmd = lambda: vista_abogado_buscar_caso(panel_vistas)  # Vincula la vista histórica de asesorías al botón del abogado
+        elif texto == "MIS CASOS ASIGNADOS":  # Mapea el listado exclusivo de los casos asignados al abogado en sesión
+            cmd = lambda: vista_abogado_ver_mis_casos(panel_vistas, session)  # Vincula la vista filtrando por el IDU del abogado activo
+        elif texto == "AGENDAR AUDIENCIA":  # Mapea la opción para calendarizar citas en sedes judiciales
+            cmd = lambda: vista_abogado_agendar_audiencia(panel_vistas, show_home)  # Enlaza el formulario de agenda al botón
+        elif texto == "ALTA Y BAJA DE USUARIOS":  # Mapea los privilegios del jefe para gestionar personal
+            cmd = lambda: vista_jefe_alta_baja(panel_vistas, show_home)  # Vincula el formulario de altas y bajas de personal
+        elif texto == "ASIGNAR CASO":  # Mapea el privilegio administrativo para encomendar casos a abogados
+            cmd = lambda: vista_jefe_asignar_caso(panel_vistas, show_home)  # Vincula el control de actualización de expedientes
+        elif texto == "VER CASOS":  # Mapea el listado general de casos junto con su creador y abogado, con opción de eliminarlos
+            cmd = lambda: vista_jefe_ver_casos(panel_vistas)  # Vincula la vista completa de casos registrados
+        elif texto == "MANDAR Y VER RECADO":  # Mapea la vista combinada de envío, consulta y eliminación de recados del jefe
+            cmd = lambda: vista_jefe_mandar_ver_recado(panel_vistas, show_home, session)  # Vincula la vista combinada pasando la sesión activa
+        elif texto == "PAGAR NOMINA":  # Mapea las facultades contables del jefe para procesar sueldos
+            cmd = lambda: vista_jefe_pagar_nomina(panel_vistas, show_home)  # Vincula la calculadora contable de sueldos al botón
+        elif texto == "VER PAGOS REALIZADOS":  # Mapea el histórico de pagos de nómina ya procesados
+            cmd = lambda: vista_jefe_ver_pagos(panel_vistas)  # Vincula la vista del historial de pagos
+
+        ctk.CTkButton(
+            sidebar,
+            text=f"{icono}   {texto}",
+            anchor="w",
+            text_color="#EFE7DC",
+            fg_color="#4E342E",
+            hover_color="#5D4037",
+            border_color="#6D4C41",
+            border_width=1,
+            height=32,
+            corner_radius=8,
+            font=("Arial", 10, "bold"),
+            command=cmd,
+        ).pack(fill="x", padx=10, pady=3)  # Instancia y empaqueta el botón reduciendo su alto y separación para que todos quepan visibles
+
+    def logout():  # Función interna encargada de invalidar el tablero de control para regresar de forma segura al login
+        root.destroy()  # Destruye por completo la ventana del tablero de control liberando los recursos gráficos
+        crear_login_inicial()  # Invoca la rutina inicializadora para desplegar nuevamente el formulario de inicio de sesión
+
+    # Botón de desconexión estático montado en la base del panel derecho (Totalmente inmune a las rutinas de limpieza de vistas)
+    ctk.CTkButton(
+        panel_derecho,
+        text="● CERRAR SESIÓN",
+        fg_color="#B71C1C",
+        hover_color="#9A1B1B",
+        text_color="#FFFFFF",
+        font=("Arial", 12, "bold"),
+        height=38,
+        corner_radius=8,
+        command=logout,
+    ).pack(side="bottom", anchor="se", padx=40, pady=40)  # Posiciona el botón rojo de cierre de sesión en la esquina inferior derecha
+
+    show_home()  # Ejecuta la vista de bienvenida por defecto al renderizar el tablero
+    root.mainloop()  # Arranca el ciclo de escucha de eventos de la ventana del tablero de control
+
+
+# =============================================================================================
+# ACCESO DE CREDENCIALES AL SISTEMA (LOGIN ORIGINAL)
+# =============================================================================================
+def realizar_login_sql(win, user, pwd):
+    # Gestiona y valida las credenciales introducidas contrastándolas de forma segura con los registros de la base de datos
+    u, p = user.strip(), pwd.strip()  # Extrae el texto ingresado removiendo espacios vacíos de los extremos
+    if not u or not p:  # Evalúa preventivamente si el usuario omitió rellenar alguna de las dos casillas obligatorias
+        return messagebox.showwarning("Advertencia", "Por favor llene las casillas.")  # Detiene la validación lanzando aviso
+
+    res = ejecutar_sql(
+        "SELECT IDU, NOMBRE, CONTRASEÑA, ROL FROM Usuarios WHERE LOWER(TRIM(IDU)) = LOWER(?) AND LOWER(TRIM(CONTRASEÑA)) = LOWER(?)",
+        (u, p),
+        fetchone=True,
+    )  # Ejecuta una búsqueda depurando variaciones de mayúsculas/minúsculas y espacios en blanco con LOWER y TRIM
+    if res:  # Evalúa si la base de datos localizó un registro coincidente con las credenciales provistas
+        idu_bd, nombre_bd, _, rol_bd = res  # Desempaqueta las propiedades devueltas de la fila de datos
+        sesion = {"idu": idu_bd, "nombre": str(nombre_bd).upper()}  # Inicializa el diccionario maestro de sesión con datos en mayúsculas
+        rol_limpio = str(rol_bd).upper().strip()  # Estandariza la cadena del rol removiendo espacios y forzando mayúsculas
+
+        win.destroy()  # Destruye la ventana del formulario de login al haber validado las credenciales con éxito
+
+        if "JEFE" in rol_limpio:  # Rutea condicionalmente al tablero del rol administrativo jefe
+            abrir_tablero("JEFE", "INFORMACIÓN DEL JEFE", BOTONES_JEFE, sesion)  # Lanza el tablero inyectando controles de jefe
+        elif "SUPERUSUARIO" in rol_limpio:  # Rutea condicionalmente al tablero del rol administrativo jefe
+            abrir_tablero("SUPERUSUARIO", "INFORMACIÓN DEL JEFE", BOTONES_JEFE, sesion)  # Lanza el tablero inyectando controles de jefe
+        elif "PASANTE" in rol_limpio:  # Rutea condicionalmente al tablero diseñado para el cuerpo de pasantes de la firma
+            abrir_tablero(
+                "PASANTE", "INFORMACIÓN DEL PASANTE", BOTONES_PASANTE, sesion
+            )  # Lanza el tablero con los accesos operativos del pasante
+        elif "ABOGADO" in rol_limpio:  # Rutea condicionalmente al tablero con las herramientas especializadas para abogados
+            abrir_tablero("ABOGADO", "INFORMACIÓN DEL ABOGADO", BOTONES_ABOGADO, sesion)  # Despliega el panel de control del abogado
+        else:  # Caso de escape por si el rol existe en la base de datos pero no cuenta con un ruteo asignado en el código
+            messagebox.showerror("Error", f"Rol '{rol_limpio}' sin vista asignada.")  # Alerta sobre la falta de configuración del rol
+            crear_login_inicial()  # Lanza nuevamente el inicio de sesión unificado
+    else:  # Bloque ejecutado cuando las credenciales no coinciden con ningún registro de la tabla de usuarios
+        messagebox.showerror("Error", "ID de Empleado o Contraseña incorrectos.")  # Muestra aviso de denegación de acceso
+
+
+def crear_login_inicial():
+    # Estructura y despliega el formulario unificado de inicio de sesión del sistema jurídico
+    win = ctk.CTk()  # Crea la ventana raíz que alojará los componentes gráficos del control de acceso
+    win.title("Sistema Jurídico - Inicio de Sesión")  # Establece el título formal de la ventana de login
+    win.geometry("450x550")  # Asigna una resolución cuadrada y compacta idónea para un formulario de acceso
+    win.resizable(False, False)  # Restringe el redimensionamiento de la ventana para preservar la composición visual fija
+    ctk.set_appearance_mode("light")  # Forzar el modo claro para asegurar la fidelidad cromática de los componentes de diseño
+    win.configure(fg_color="#FFE7DC")  # Aplica el tono beige claro de fondo en toda la superficie de la ventana externa
+
+    card = ctk.CTkFrame(
+        win, fg_color="#F9F8F6", corner_radius=15, border_color="#C2BCB4", border_width=1
+    )  # Diseña una tarjeta central blanca para encapsular los campos del formulario de manera limpia
+    card.pack(pady=30, padx=30, fill="both", expand=True)  # Ajusta la tarjeta central centrándola con márgenes uniformes
+
+    ctk.CTkLabel(card, text="⚖️", font=("Arial", 50), text_color="#4A311E").pack(pady=(30, 5))  # Pinta el logotipo de balanza superior
+    ctk.CTkLabel(
+        card,
+        text="SISTEMA INTEGRAL JURÍDICO",
+        font=("Times New Roman", 20, "bold"),
+        text_color="#1F1711",
+    ).pack(pady=2)  # Pinta el título de marca de la aplicación jurídica
+    ctk.CTkLabel(
+        card,
+        text="Inicio de sesión unificado para personal autorizado",
+        font=("Arial", 11),
+        text_color="#7D5D42",
+    ).pack(pady=(0, 25))  # Pinta la leyenda informativa de seguridad de la firma
+
+    ctk.CTkLabel(
+        card,
+        text="Correo Electrónico / ID de Empleado",
+        font=("Arial", 11),
+        text_color="#1F1711",
+    ).pack(anchor="w", padx=40)  # Pinta la etiqueta del campo de identificación del usuario
+    ent_user = ctk.CTkEntry(
+        card,
+        placeholder_text="Escriba su identificador...",
+        width=320,
+        fg_color="#FFFFFF",
+        text_color="#1F1711",
+        border_color="#C2BCB4",
+    )  # Configura el control de entrada de texto para recolectar el ID del empleado
+    ent_user.pack(pady=(0, 15))  # Posiciona la caja de texto aplicando una holgura inferior
+
+    ctk.CTkLabel(card, text="Contraseña", font=("Arial", 11), text_color="#1F1711").pack(anchor="w", padx=40)  # Pinta la etiqueta del campo de la contraseña secreta
+    ent_pwd = ctk.CTkEntry(
+        card,
+        placeholder_text="••••••••",
+        show="*",
+        width=320,
+        fg_color="#FFFFFF",
+        text_color="#1F1711",
+        border_color="#C2BCB4",
+    )  # Configura la caja ocultando los caracteres visibles mediante viñetas circulares por privacidad
+    ent_pwd.pack(pady=(0, 25))  # Posiciona la entrada de contraseña en la tarjeta del formulario
+
+    ctk.CTkButton(
+        card,
+        text="INICIAR SESIÓN",
+        fg_color="#4A311E",
+        hover_color="#5A3E29",
+        text_color="#FFFFFF",
+        font=("Arial", 12, "bold"),
+        height=42,
+        width=320,
+        command=lambda: realizar_login_sql(win, ent_user.get(), ent_pwd.get()),
+    ).pack(pady=10)  # Crea el botón de envío enlazando la lógica de validación mediante una función anónima lambda
+
+    ctk.CTkLabel(
+        card,
+        text="Bufete Jurídico & Asociados - Todos los derechos reservados.",
+        font=("Arial", 9),
+        text_color="#7D5D42",
+    ).pack(side="bottom", pady=15)  # Inserta la nota legal de propiedad intelectual al pie del formulario blanco
+
+    win.mainloop()  # Inicia el bucle de escucha de la ventana del login manteniendo la interfaz responsiva
+
+
+if __name__ == "__main__":
+    verificar_estructura_bd()  # Verifica y actualiza la estructura de la base de datos antes de arrancar la aplicación
+    crear_login_inicial()  # Ejecuta el programa llamando al login inicializador como punto de entrada de la aplicación
